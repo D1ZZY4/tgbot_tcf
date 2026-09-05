@@ -341,6 +341,12 @@ async def schedule_unban(ban_id: str, user_id: int, run_at: datetime) -> str:
         id=schedule_id,
         args=[ban_id, user_id],
         replace_existing=True,
+        # * A restart straddling run_at must still deactivate the ban: the
+        # * default 1s misfire window would silently drop it. One hour
+        # * covers deploys while staying far below real ban durations.
+        # * coalesce collapses duplicate queued firings into one run.
+        misfire_grace_time=3600,
+        coalesce=True,
     )
     log.info(
         "Scheduled persistent unban: ban_id=%s user_id=%d run_at=%s.",
