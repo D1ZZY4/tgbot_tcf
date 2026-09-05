@@ -12,7 +12,7 @@ from typing import TYPE_CHECKING
 
 from tcbot import database as db
 from tcbot.modules.helper.identity import ANONYMOUS_BOT_ID, TELEGRAM_USER_ID
-from tcbot.utils.time_and_date import TELEGRAM_LOOKUP_TIMEOUT
+from tcbot.utils.time_and_date import TELEGRAM_LOOKUP_TIMEOUT, to_utc, utc_now
 
 if TYPE_CHECKING:
     from telegram import Bot, Chat, ChatFullInfo, Message, Update, User
@@ -25,6 +25,10 @@ _GET_CHAT_TIMEOUT = TELEGRAM_LOOKUP_TIMEOUT
 # * Overall deadline for the per-group get_chat_member sweep in
 # * resolve_user_identity: bounds latency on large federations.
 _RESOLVE_SWEEP_TIMEOUT = 15.0
+# * Maximum age of a cached identity before detail views re-verify it
+# * live. Harvest writes on every observed message keep active users far
+# * below this; it only bites for silent users (banned, lurkers).
+_SYNC_MAX_AGE_S = 7 * 24 * 3600
 
 
 async def _safe_get_chat(bot: Bot, ident: str | int) -> Chat | ChatFullInfo | None:
@@ -290,7 +294,7 @@ async def resolve_user_identity(
 
 
 async def sync_user_identity(
-    bot: Bot, target_id: int
+    bot: Bot, target_id: int, *, max_age_seconds: float = _SYNC_MAX_AGE_S
 ) -> tuple[str, str | None, str | None]:
     """Verify the cached identity against live Telegram and update on mismatch.
 
@@ -298,9 +302,13 @@ async def sync_user_identity(
     ``/tcstats`` user card):
 
     1. Read the cached document (fast path, one indexed read).
-    2. Fetch the live identity via :func:`_fetch_live_identity`.
-    3. If live is unreachable, return the cached values (stale beats absent).
-    4. If live differs field-by-field, persist and return the live triple.
+    2. Return it untouched when complete (first name + username) and
+       fresher than ``max_age_seconds``.
+    3. Otherwise fetch live via :func:`_fetch_live_identity`.
+    4. If live is unreachable, return the cached values (stale beats absent).
+    5. Persist the live triple (bumping ``last_updated`` even when equal,
+       so the next view skips re-verification for another full window)
+       and return it.
 
     A live ``None`` means "absent on Telegram" (definitive for ``User``
     objects), so missing fields clear stale values via explicit ``""``.
@@ -317,15 +325,23 @@ async def sync_user_identity(
     else:
         have = ("", None, None)
 
+    if have[0] and have[1]:
+        age: float | None = None
+        try:
+            updated_at = cached.get("last_updated") if cached else None
+            if updated_at is not None:
+                age = (utc_now() - to_utc(updated_at)).total_seconds()
+        except Exception as exc:
+            log.debug("sync age check failed for %d: %s", target_id, exc)
+        if age is not None and age <= max_age_seconds:
+            return have
+
     live = await _fetch_live_identity(bot, target_id)
     if live is None:
         if have[0]:
             return have
         db.users_cache.remember_identity(target_id, None, None, None)
         return str(target_id), None, None
-
-    if cached and (have[0], have[1], have[2]) == live:
-        return live
 
     fname, uname, lname = live
     try:

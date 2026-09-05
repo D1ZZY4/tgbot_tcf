@@ -59,6 +59,24 @@ async def get_group_titles(chat_ids: list[int]) -> dict[int, str]:
     return {int(d["chat_id"]): d.get("title") or str(d["chat_id"]) for d in docs}
 
 
+async def refresh_group_title(chat_id: int, title: str) -> bool:
+    """Update the stored title when live Telegram reports a different one.
+
+    Returns True when a change was written (and the groups cache
+    invalidated), False when already current or the group is unknown.
+    """
+    doc = await db_call(
+        _groups().find_one({"chat_id": chat_id}, {"_id": 0, "title": 1})
+    )
+    if doc is None or doc.get("title") == title:
+        return False
+    await db_call(
+        _groups().update_one({"chat_id": chat_id}, {"$set": {"title": title}})
+    )
+    active_groups_cache.invalidate(_ALL_GROUPS_KEY)
+    return True
+
+
 async def is_connected(chat_id: int) -> bool:
     """Check if a group is currently active and connected to the federation (L1->L2->DB cached)."""
 

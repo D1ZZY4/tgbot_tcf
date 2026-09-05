@@ -24,6 +24,7 @@ from tcbot.modules.helper.ban_info import build_ban_detail
 from tcbot.modules.helper.extraction import sync_user_identity
 from tcbot.modules.helper.formatter import bold, code, esc, mention, user_ref
 from tcbot.utils.pagination import date_or_unknown, nav_row, paginate
+from tcbot.utils.time_and_date import TELEGRAM_LOOKUP_TIMEOUT
 
 log = logging.getLogger(__name__)
 
@@ -390,7 +391,7 @@ class Stats:
 
     @classmethod
     async def chat_detail(
-        cls, page: int, idx: int, stable: str | None = None
+        cls, bot: Bot, page: int, idx: int, stable: str | None = None
     ) -> tuple[str, InlineKeyboardMarkup]:
         """Detail card for a connected group."""
         groups = await db.groups_db.active_groups()
@@ -411,6 +412,23 @@ class Stats:
             )
             return text, kb
         title = grp.get("title", "Unknown")
+        # * Verify the title live: renames otherwise linger until reconnect.
+        # * Bounded single call; failures keep the cached title.
+        try:
+            live_chat = await asyncio.wait_for(
+                bot.get_chat(chat_id), timeout=TELEGRAM_LOOKUP_TIMEOUT
+            )
+        except Exception as exc:
+            log.debug("stats chat_detail get_chat failed for %d: %s", chat_id, exc)
+            live_chat = None
+        if live_chat is not None and live_chat.title and live_chat.title != title:
+            title = live_chat.title
+            try:
+                await db.groups_db.refresh_group_title(chat_id, live_chat.title)
+            except Exception as exc:
+                log.debug(
+                    "stats chat_detail title refresh failed for %d: %s", chat_id, exc
+                )
         added_by = grp.get("added_by", 0)
         adder_fname, adder_uname = await db.users_cache.get_user_mention_data(added_by)
         date_str = date_or_unknown(grp.get("added_date"))

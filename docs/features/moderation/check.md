@@ -186,10 +186,11 @@ Per-record renderers in `kicks_list`, `mutes_list`, and `warns_in_group` also ga
 
 `_resolve_user_info` is a thin wrapper over the shared
 `extraction.sync_user_identity`: the cached identity is verified against
-live Telegram and updated on mismatch. The live fetch is one bounded
-`bot.get_chat` call plus, only when needed, a group sweep bounded by
-`_RESOLVE_SWEEP_TIMEOUT`, so a stalled Telegram lookup never blocks the
-user.
+live Telegram and updated on mismatch, and documents older than
+`_SYNC_MAX_AGE_S` (7 days) are re-verified even when complete. The live
+fetch is one bounded `bot.get_chat` call plus, only when needed, a group
+sweep bounded by `_RESOLVE_SWEEP_TIMEOUT`, so a stalled Telegram lookup
+never blocks the user.
 
 ## Indexes
 
