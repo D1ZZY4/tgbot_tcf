@@ -29,6 +29,28 @@ The six files in this directory are the canonical engineering rules. Public
 contributor guidance belongs in [`CONTRIBUTING.md`](../../CONTRIBUTING.md);
 deployment and feature documentation belongs under `docs/`.
 
+## Read Fully Before Editing
+
+This project is complex and modular: handlers, workflows, helpers, database
+helpers, caches, and docs reference each other across dozens of files. A
+partial read causes failed edits and wrong assumptions. Therefore:
+
+- Always read the full file with the Read tool before editing it. Never
+  read with line limits or offsets and never guess the surrounding content.
+- Never use `sed`, `cat`, `head`, `tail`, or `awk` to read file content;
+  use the Read tool. Shell search finds locations; only a full Read gives
+  the content to edit against.
+- Read every connected file, not just the target: importers and callers of
+  every changed function, the modules it imports, and the shared helpers
+  it uses.
+- Read every affected file: handler registrations, callback patterns,
+  documentation, and examples that describe the changed behavior.
+- Re-read after the formatter runs: formatting reflows text, so text
+  captured before a format pass may no longer match.
+- Verify every edit after applying it: re-read the edited region or check
+  `git diff` before moving on. A tool reporting success is not proof the
+  result is correct.
+
 ## Skills and Sub-Agents
 
 Skills in `.agents/skills/` apply automatically when their trigger matches.
