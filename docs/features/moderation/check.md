@@ -184,7 +184,12 @@ The profile view performs eleven independent reads in a single `asyncio.gather`:
 
 Per-record renderers in `kicks_list`, `mutes_list`, and `warns_in_group` also gather admin-name lookups and group-title lookups up front so the line loop is purely synchronous string-building.
 
-`_resolve_user_info` consults the member cache first; only on a partial cache miss does it call `bot.get_chat`, and that call is wrapped in `asyncio.wait_for(timeout=3.0)` so a stalled Telegram lookup never blocks the user for more than three seconds.
+`_resolve_user_info` is a thin wrapper over the shared
+`extraction.sync_user_identity`: the cached identity is verified against
+live Telegram and updated on mismatch. The live fetch is one bounded
+`bot.get_chat` call plus, only when needed, a group sweep bounded by
+`_RESOLVE_SWEEP_TIMEOUT`, so a stalled Telegram lookup never blocks the
+user.
 
 ## Indexes
 

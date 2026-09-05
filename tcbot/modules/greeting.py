@@ -49,7 +49,7 @@ async def _handle_member(
         return
 
     _, ban, mute = await asyncio.gather(
-        db.users_cache.upsert_user_if_changed(
+        db.users_cache.harvest_user_identity(
             member.id,
             member.username,
             member.first_name,
@@ -264,9 +264,9 @@ async def on_join_request_approved(
             return
 
     # * Identity harvest in parallel with mute/ban lookups.
-    # * upsert_user_if_changed skips the DB write when identity is unchanged (L1 hit).
+    # * harvest_user_identity skips the DB write when identity is unchanged (L1 hit).
     _, mute, ban = await asyncio.gather(
-        db.users_cache.upsert_user_if_changed(
+        db.users_cache.harvest_user_identity(
             user.id, user.username, user.first_name, user.last_name or None
         ),
         db.mutes_db.get_active_mute(user.id),
@@ -363,9 +363,9 @@ async def on_join_request(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
             return
 
     # * Opportunistic identity harvest + ban check in parallel.
-    # * upsert_user_if_changed skips the DB write when identity is unchanged (L1 hit).
+    # * harvest_user_identity skips the DB write when identity is unchanged (L1 hit).
     _, ban = await asyncio.gather(
-        db.users_cache.upsert_user_if_changed(
+        db.users_cache.harvest_user_identity(
             user.id, user.username, user.first_name, user.last_name or None
         ),
         db.bans_db.get_active_ban(user.id),

@@ -101,6 +101,29 @@ async def upsert_user_if_changed(
     return True
 
 
+async def harvest_user_identity(
+    user_id: int,
+    username: str | None,
+    first_name: str,
+    last_name: str | None = None,
+) -> bool:
+    """Persist a full identity snapshot taken from a live Telegram User object.
+
+    Unlike ``upsert_user_if_changed`` (where ``None`` means "unknown, keep
+    the stored value"), ``None`` here means "absent on Telegram": fields the
+    object omits are cleared via ``""`` so removals (deleted username or
+    last name) propagate instead of lingering stale. Use only with data
+    taken directly from a live ``User`` object, never with partial data
+    from ban/promote/check-by-ID paths (those must keep ``None``).
+    """
+    return await upsert_user_if_changed(
+        user_id,
+        username if username is not None else "",
+        first_name,
+        last_name if last_name is not None else "",
+    )
+
+
 # * L1 mention-cache entries are [first_name, username, last_name] triples.
 # * Readers only use indexes 0 and 1; index 2 exists so change detection
 # * notices last_name-only updates. The not-found sentinel is all-None.

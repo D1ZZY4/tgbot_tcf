@@ -51,8 +51,9 @@ async def _harvest_admin_identities(
 ) -> None:
     """Persist identity data for every admin using change-detection writes.
 
-    Uses ``upsert_user_if_changed`` so the DB write is skipped when the cached
-    identity already matches, keeping the harvest nearly free on subsequent runs.
+    Uses ``harvest_user_identity`` (live User objects: absent fields clear
+    stale values) so the DB write is skipped when the cached identity
+    already matches, keeping the harvest nearly free on subsequent runs.
     """
     coros = []
     for member in admins:
@@ -60,7 +61,7 @@ async def _harvest_admin_identities(
         if user is None or user.is_bot or not user.first_name:
             continue
         coros.append(
-            db.users_cache.upsert_user_if_changed(
+            db.users_cache.harvest_user_identity(
                 user.id,
                 user.username,
                 user.first_name,

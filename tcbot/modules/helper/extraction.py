@@ -175,48 +175,34 @@ async def extract_target(
     return None, None
 
 
-async def resolve_user_identity(
+async def _fetch_live_identity(
     bot: Bot, target_id: int
-) -> tuple[str, str | None, str | None]:
-    """Return (display_name, username_or_None, last_name_or_None) for any user.
+) -> tuple[str, str | None, str | None] | None:
+    """Fetch a fresh (first_name, username, last_name) triple from Telegram.
 
-    Shared identity resolver used by profile views (``/check``,
-    ``/tcstats`` user detail). Fast path is the member cache: a document
-    carrying both first name and username proves a full-identity write
-    happened (sparse writers such as ban-by-ID never supply a username),
-    so it is returned as-is without touching Telegram. Otherwise
-    ``bot.get_chat`` is tried as one bounded call, then the
-    connected-group list is walked with ``get_chat_member`` (which returns
-    full ``User`` objects even for kicked users). Anything resolved is
-    persisted via ``upsert_user`` plus an L1 triple put (upsert invalidates
-    rather than populates), so the next view hits the fast path; a
-    fruitless attempt caches the sentinel so repeats stay bounded by the
-    L1 TTL. The sweep itself is bounded by ``_RESOLVE_SWEEP_TIMEOUT``; on
-    timeout or total miss the numeric-ID fallback still replies.
+    Tries one bounded ``get_chat`` call, then walks the connected groups
+    with ``get_chat_member`` (which returns full ``User`` objects even for
+    kicked users). Returns ``None`` when nothing resolves. The sweep is
+    bounded by ``_RESOLVE_SWEEP_TIMEOUT``.
+
+    Honest limitation: the Bot API cannot enumerate group members, so
+    "fetch every member" is impossible; unknown users resolve per-ID
+    across the groups the bot has joined.
     """
-    cached = await db.users_cache.get_user(target_id)
-    fname = (cached.get("first_name") or "") if cached else ""
-    uname = (cached.get("username") if cached else None) or None
-    lname = (cached.get("last_name") if cached else None) or None
-
-    if fname and uname:
-        return fname, uname, lname
-
-    if not cached and db.users_cache.has_recent_identity_attempt(target_id):
-        # * Unknown user: a cached entry means a recent attempt already
-        # * came up empty; skip Telegram until the L1 TTL expires.
-        return str(target_id), None, None
-
-    if not fname:
-        try:
-            chat = await asyncio.wait_for(
-                bot.get_chat(target_id), timeout=_GET_CHAT_TIMEOUT
-            )
-            fname = fname or (chat.first_name or "")
-            uname = uname or chat.username
-            lname = lname if lname is not None else getattr(chat, "last_name", None)
-        except Exception as exc:
-            log.debug("get_chat(%s) failed: %s", target_id, exc)
+    fname: str = ""
+    uname: str | None = None
+    lname: str | None = None
+    try:
+        chat = await asyncio.wait_for(
+            bot.get_chat(target_id), timeout=_GET_CHAT_TIMEOUT
+        )
+    except Exception as exc:
+        log.debug("get_chat(%s) failed: %s", target_id, exc)
+        chat = None
+    if chat is not None:
+        fname = chat.first_name or ""
+        uname = chat.username
+        lname = getattr(chat, "last_name", None)
 
     if not fname:
         groups = await db.groups_db.active_groups()
@@ -244,10 +230,7 @@ async def resolve_user_identity(
                         continue
                     if user.is_bot or not user.first_name:
                         continue
-                    fname = user.first_name
-                    uname = user.username
-                    lname = user.last_name
-                    break
+                    return user.first_name, user.username, user.last_name
         except TimeoutError:
             log.debug(
                 "get_chat_member sweep timed out for target=%d after %ds",
@@ -256,9 +239,45 @@ async def resolve_user_identity(
             )
 
     if not fname:
+        return None
+    return fname, uname, lname
+
+
+async def resolve_user_identity(
+    bot: Bot, target_id: int
+) -> tuple[str, str | None, str | None]:
+    """Return (display_name, username_or_None, last_name_or_None) for any user.
+
+    Shared identity resolver used by profile views (``/check``,
+    ``/tcstats`` user detail). Fast path is the member cache: a document
+    carrying both first name and username proves a full-identity write
+    happened (sparse writers such as ban-by-ID never supply a username),
+    so it is returned as-is without touching Telegram. Otherwise one live
+    fetch runs; anything resolved is persisted via ``upsert_user`` plus an
+    L1 triple put (upsert invalidates rather than populates), so the next
+    view hits the fast path. A fruitless attempt caches the sentinel so
+    repeats stay bounded by the L1 TTL. On timeout or total miss the
+    numeric-ID fallback still replies.
+    """
+    cached = await db.users_cache.get_user(target_id)
+    fname = (cached.get("first_name") or "") if cached else ""
+    uname = (cached.get("username") if cached else None) or None
+    lname = (cached.get("last_name") if cached else None) or None
+
+    if fname and uname:
+        return fname, uname, lname
+
+    if not cached and db.users_cache.has_recent_identity_attempt(target_id):
+        # * Unknown user: a cached entry means a recent attempt already
+        # * came up empty; skip Telegram until the L1 TTL expires.
+        return str(target_id), None, None
+
+    live = await _fetch_live_identity(bot, target_id)
+    if live is None:
         db.users_cache.remember_identity(target_id, None, None, None)
         return str(target_id), None, None
 
+    fname, uname, lname = live
     # * Persist whatever Telegram told us (even a username-less profile)
     # * so the next view takes the fast path, then mirror it into L1
     # * because upsert_user invalidates rather than populates.
@@ -266,5 +285,57 @@ async def resolve_user_identity(
         await db.users_cache.upsert_user(target_id, uname, fname, lname)
     except Exception as exc:
         log.debug("users_cache upsert after resolve failed for %d: %s", target_id, exc)
+    db.users_cache.remember_identity(target_id, fname, uname, lname)
+    return fname, uname, lname
+
+
+async def sync_user_identity(
+    bot: Bot, target_id: int
+) -> tuple[str, str | None, str | None]:
+    """Verify the cached identity against live Telegram and update on mismatch.
+
+    The full sync protocol for explicit detail views (``/check`` profile,
+    ``/tcstats`` user card):
+
+    1. Read the cached document (fast path, one indexed read).
+    2. Fetch the live identity via :func:`_fetch_live_identity`.
+    3. If live is unreachable, return the cached values (stale beats absent).
+    4. If live differs field-by-field, persist and return the live triple.
+
+    A live ``None`` means "absent on Telegram" (definitive for ``User``
+    objects), so missing fields clear stale values via explicit ``""``.
+    Callers holding only partial data must keep using ``upsert_user`` with
+    ``None`` (unknown, preserve).
+    """
+    cached = await db.users_cache.get_user(target_id)
+    if cached:
+        have: tuple[str, str | None, str | None] = (
+            cached.get("first_name") or "",
+            (cached.get("username") or None),
+            (cached.get("last_name") or None),
+        )
+    else:
+        have = ("", None, None)
+
+    live = await _fetch_live_identity(bot, target_id)
+    if live is None:
+        if have[0]:
+            return have
+        db.users_cache.remember_identity(target_id, None, None, None)
+        return str(target_id), None, None
+
+    if cached and (have[0], have[1], have[2]) == live:
+        return live
+
+    fname, uname, lname = live
+    try:
+        await db.users_cache.upsert_user(
+            target_id,
+            uname if uname is not None else "",
+            fname,
+            lname if lname is not None else "",
+        )
+    except Exception as exc:
+        log.debug("users_cache upsert after sync failed for %d: %s", target_id, exc)
     db.users_cache.remember_identity(target_id, fname, uname, lname)
     return fname, uname, lname

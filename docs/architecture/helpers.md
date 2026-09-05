@@ -78,6 +78,8 @@ Target resolution for moderation commands.
 | Export | Purpose |
 |---|---|
 | `extract_target(update, args, bot=None)` | Resolves targets; returns `tuple[int, str]` (user_id, fname) on success or `tuple[None, None]` on failure. Priority: reply to sender_chat-aware → args (ID/username) → args (partial name search in DB) → text mentions → @mentions. |
+| `resolve_user_identity(bot, target_id)` | Gap-fill resolver returning `(fname, uname, lname)`; cache fast path, else one bounded live fetch, persists what it finds. |
+| `sync_user_identity(bot, target_id)` | Full sync protocol for detail views: cached read, live verify, update on mismatch. |
 
 **Resolution priority for `extract_target()`:**
 1. **Reply** - Most common use case, checked first

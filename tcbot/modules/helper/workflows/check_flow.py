@@ -15,7 +15,7 @@ from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from tcbot import database as db
 from tcbot.database.documents import BanDoc
 from tcbot.modules.helper.ban_info import build_ban_detail
-from tcbot.modules.helper.extraction import resolve_user_identity
+from tcbot.modules.helper.extraction import sync_user_identity
 from tcbot.modules.helper.formatter import bold, code, esc, italic, mention
 from tcbot.utils.pagination import date_or_unknown, nav_row, paginate
 from tcbot.utils.time_and_date import fmt_dt
@@ -36,13 +36,14 @@ _BTNS_PER_ROW = 3
 
 
 async def _resolve_user_info(bot: Bot, target_id: int) -> tuple[str, str | None]:
-    """Return (display_name, username_or_None); shared resolver, name pair only.
+    """Return (display_name, username_or_None); verified sync, name pair only.
 
-    Thin wrapper over :func:`extraction.resolve_user_identity` kept so the
-    profile gather below keeps its shape; the full triple (with last name)
-    lives in the shared resolver.
+    Thin wrapper over :func:`extraction.sync_user_identity` kept so the
+    profile gather below keeps its shape; the profile is an explicit
+    detail view, so the cached identity is verified live and updated on
+    mismatch instead of served stale.
     """
-    fname, uname, _lname = await resolve_user_identity(bot, target_id)
+    fname, uname, _lname = await sync_user_identity(bot, target_id)
     return fname, uname
 
 

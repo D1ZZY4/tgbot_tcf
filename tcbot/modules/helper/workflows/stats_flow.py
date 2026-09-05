@@ -21,7 +21,7 @@ from telegram import (
 from tcbot import cfg
 from tcbot import database as db
 from tcbot.modules.helper.ban_info import build_ban_detail
-from tcbot.modules.helper.extraction import resolve_user_identity
+from tcbot.modules.helper.extraction import sync_user_identity
 from tcbot.modules.helper.formatter import bold, code, esc, mention, user_ref
 from tcbot.utils.pagination import date_or_unknown, nav_row, paginate
 
@@ -328,13 +328,13 @@ class Stats:
         last_name = u.get("last_name") or "-"
         if not u.get("username"):
             # * Sparse doc (e.g. created by a ban-by-ID that only knew the
-            # * first name): resolve live so username/last name show current
-            # * values. The resolver persists what it finds; docs that
-            # * already carry a username skip Telegram entirely.
+            # * first name): verify live so username/last name show current
+            # * values. The sync persists what it finds; docs that already
+            # * carry a username skip Telegram entirely.
             try:
-                r_fname, r_uname, r_lname = await resolve_user_identity(bot, uid)
+                r_fname, r_uname, r_lname = await sync_user_identity(bot, uid)
             except Exception as exc:
-                log.debug("stats user_detail resolve failed for %d: %s", uid, exc)
+                log.debug("stats user_detail sync failed for %d: %s", uid, exc)
             else:
                 fname, uname = r_fname, r_uname
                 if r_lname:

@@ -71,13 +71,16 @@ The `member_cache` collection stores user profile data. For performance, use the
 
 For group title lookups across multiple chat IDs, use `groups_db.get_group_titles(chat_ids)` which returns `dict[int, str]` in a single query.
 
-| `upsert_user(user_id, username, first_name, last_name)` | All fields | Unconditional DB write (used on first-seen and forced refresh) |
-| `upsert_user_if_changed(user_id, username, first_name, last_name)` | All fields | Change-detection write: checks L1 mention cache; skips MongoDB write when `(first_name, username)` matches cached data. Returns `True` when a write occurred. Use this on every hot-path update (e.g. per-message member cache harvesting). |
+| `upsert_user(user_id, username, first_name, last_name)` | All fields | Unconditional DB write (used on first-seen and forced refresh). `None` means "unknown, preserve stored value"; pass `""` to clear a field. |
+| `upsert_user_if_changed(user_id, username, first_name, last_name)` | All fields | Change-detection write: compares the `(first_name, username, last_name)` triple against the L1 entry; skips the MongoDB write on full match. Returns `True` when a write occurred. |
+| `harvest_user_identity(user_id, username, first_name, last_name)` | All fields | Snapshot write for data taken from a live Telegram `User` object: `None` means "absent", so missing fields are cleared via `""` and removals propagate. Use on every hot-path update (e.g. per-message member cache harvesting). Never use with partial data from ban/promote/check-by-ID paths (those keep `None`). |
+| `resolve_user_identity(bot, user_id)` / `sync_user_identity(bot, user_id)` | Triple | Shared resolvers in `extraction.py`. `resolve` fills gaps only (cache fast path, else one bounded live fetch). `sync` additionally verifies a cached document against live Telegram and updates on mismatch. Both persist what they find; profile views (`/check`, `/tcstats` detail) use `sync`. |
+| `has_recent_identity_attempt(user_id)` / `remember_identity(...)` | L1 only | Bounds repeat Telegram lookups by the L1 TTL without touching MongoDB. |
 
 **Performance tip:** Use batch functions whenever you need data for more than one user in a list view or fan-out result. Calling single-user functions inside a loop is an N+1 anti-pattern. Both batch functions use the `(user_id, first_name, username)` index in `member_cache`. For partial-name target resolution, use `search_by_name` instead of `all_users` to avoid transferring the full collection.
 
 **Hot-path harvest pattern:** On every observed Telegram update, call
-`upsert_user_if_changed` (not `upsert_user`). When the cached identity has not
+`harvest_user_identity` (not `upsert_user`). When the cached identity has not
 changed, the helper skips the MongoDB write. The update handlers schedule this
 harvest in the background so the main handler is not held up by an unnecessary
 write.
