@@ -139,7 +139,7 @@ Review the dependency changes and CI results before merging.
 **What it does:**
 - Runs the bot for a ~5 hour window per run (GitHub caps a job at 6h). When `WEBHOOK_URL` is set the bot uses webhook mode; otherwise it falls back to polling. `WEBHOOK_SECRET` is optional because the runtime generates one when absent
 - **Self-chains:** roughly 10 minutes before the window ends (`HANDOVER_LEAD=600`), it dispatches the next run. The dispatch is retried up to 3 times (10s apart). This requires a repository secret `BOT_PAT` (a Personal Access Token with the `workflow` scope), because the built-in `GITHUB_TOKEN` cannot trigger workflows
-- The cron schedule (every 15 minutes) acts as a resurrection fallback if the chain breaks or no PAT is configured. The `concurrency` group allows only one active run and one pending run; a newer pending run can replace an older one
+- The cron schedule (every 15 minutes) acts as a resurrection fallback if the chain breaks or no PAT is configured. The `concurrency` group (`cancel-in-progress: false`) serializes runs: a cron tick while a run is active queues behind it instead of being discarded, so ticks can pile up behind a long holder
 - A `concurrency` group (`tcf-bot-runner`, `cancel-in-progress: false`) prevents overlapping bot instances. This avoids duplicate update processing in polling mode and keeps webhook ownership unambiguous
 - Bot configuration comes from repository secrets (`BOT_TOKEN`, `MONGODB_URI`, `OWNER_ID`, `WEBHOOK_URL`, `WEBHOOK_SECRET`, etc.), plus the optional `BOT_PAT` for self-chaining
 
