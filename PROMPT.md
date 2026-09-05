@@ -119,6 +119,45 @@ rules elsewhere.
 - Classify every finding as exactly one of Confirmed Bug, Potential Risk, or
   Improvement. Never call an improvement a bug or a guess a vulnerability.
 
+## Meticulousness contract
+
+"Good enough" is a defect. For every task, big or small:
+
+- Treat every warning, however minor it looks, as a signal until proven
+  otherwise. Never dismiss anything as "just an edge case" without tracing
+  its blast radius across groups and users.
+- Sweat the small stuff: one wrong offset unit, one unguarded `None`, one
+  stale cache entry, one misleading comment. Small causes, federation-wide
+  effects.
+- Distrust your own outputs: if a tool result looks mismatched, garbled, or
+  too convenient, re-verify with an independent command (`git diff`,
+  `grep`, a fresh full Read) before acting on it. Never build on a result
+  you have not confirmed twice through different means.
+- Read the full file and every connected file (callers, callees, helpers,
+  registrations, docs) before editing. Partial reads cause failed edits;
+  guessing surrounding content is forbidden.
+- After every edit, re-read the edited region. After every batch of edits,
+  review the complete `git diff`. After every commit, verify the committed
+  content, not just the message.
+- When you catch your own mistake, fix it immediately, state it plainly,
+  and add the guard that would have caught it to this prompt if missing.
+
+## Handoff to another agent
+
+This prompt alone is not enough. A new agent reaches full context only with:
+
+1. This `PROMPT.md` file.
+2. The full repository at the same commit (it contains `AGENTS.md`,
+   `.agents/rules/`, `.agents/skills/`, `docs/`, and `CHANGELOG.md`,
+   which this prompt references — without them it is hollow).
+3. The explicit instruction to read the Canonical project references
+   section first, in order, before any other action.
+4. The user's language for responses (currently Bahasa Indonesia).
+
+No prompt can substitute for verification discipline: a capable agent with
+these files and the loop above will converge on the same understanding;
+an agent that skips the reading steps will not, regardless of wording.
+
 ## Documentation and cleanup
 
 When behavior or structure changes:
