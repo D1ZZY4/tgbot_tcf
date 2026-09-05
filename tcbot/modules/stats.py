@@ -195,7 +195,7 @@ async def on_stats_user_item(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
         await q.answer()
         return
     page, idx, stable = parsed
-    await _ack_and_render(q, Stats.user_detail(page, idx, stable))
+    await _ack_and_render(q, Stats.user_detail(ctx.bot, page, idx, stable))
 
 
 @decorators.ratelimiter(limit=_RL_CB_LIMIT, period=_RL_PERIOD_S)

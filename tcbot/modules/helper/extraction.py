@@ -12,6 +12,7 @@ from typing import TYPE_CHECKING
 
 from tcbot import database as db
 from tcbot.modules.helper.identity import ANONYMOUS_BOT_ID, TELEGRAM_USER_ID
+from tcbot.utils.time_and_date import TELEGRAM_LOOKUP_TIMEOUT
 
 if TYPE_CHECKING:
     from telegram import Bot, Chat, ChatFullInfo, Message, Update, User
@@ -19,8 +20,11 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # * Telegram lookups are wrapped in wait_for so a stalled API call never blocks
-# * the user-facing reply. Three seconds is the standard project-wide budget.
-_GET_CHAT_TIMEOUT = 3.0
+# * the user-facing reply. Per-call budget is the shared project-wide value.
+_GET_CHAT_TIMEOUT = TELEGRAM_LOOKUP_TIMEOUT
+# * Overall deadline for the per-group get_chat_member sweep in
+# * resolve_user_identity: bounds latency on large federations.
+_RESOLVE_SWEEP_TIMEOUT = 15.0
 
 
 async def _safe_get_chat(bot: Bot, ident: str | int) -> Chat | ChatFullInfo | None:
@@ -169,3 +173,98 @@ async def extract_target(
                     return chat.id, await _best_name(chat.id, chat.first_name, uname)
 
     return None, None
+
+
+async def resolve_user_identity(
+    bot: Bot, target_id: int
+) -> tuple[str, str | None, str | None]:
+    """Return (display_name, username_or_None, last_name_or_None) for any user.
+
+    Shared identity resolver used by profile views (``/check``,
+    ``/tcstats`` user detail). Fast path is the member cache: a document
+    carrying both first name and username proves a full-identity write
+    happened (sparse writers such as ban-by-ID never supply a username),
+    so it is returned as-is without touching Telegram. Otherwise
+    ``bot.get_chat`` is tried as one bounded call, then the
+    connected-group list is walked with ``get_chat_member`` (which returns
+    full ``User`` objects even for kicked users). Anything resolved is
+    persisted via ``upsert_user`` plus an L1 triple put (upsert invalidates
+    rather than populates), so the next view hits the fast path; a
+    fruitless attempt caches the sentinel so repeats stay bounded by the
+    L1 TTL. The sweep itself is bounded by ``_RESOLVE_SWEEP_TIMEOUT``; on
+    timeout or total miss the numeric-ID fallback still replies.
+    """
+    cached = await db.users_cache.get_user(target_id)
+    fname = (cached.get("first_name") or "") if cached else ""
+    uname = (cached.get("username") if cached else None) or None
+    lname = (cached.get("last_name") if cached else None) or None
+
+    if fname and uname:
+        return fname, uname, lname
+
+    if not cached and db.users_cache.has_recent_identity_attempt(target_id):
+        # * Unknown user: a cached entry means a recent attempt already
+        # * came up empty; skip Telegram until the L1 TTL expires.
+        return str(target_id), None, None
+
+    if not fname:
+        try:
+            chat = await asyncio.wait_for(
+                bot.get_chat(target_id), timeout=_GET_CHAT_TIMEOUT
+            )
+            fname = fname or (chat.first_name or "")
+            uname = uname or chat.username
+            lname = lname if lname is not None else getattr(chat, "last_name", None)
+        except Exception as exc:
+            log.debug("get_chat(%s) failed: %s", target_id, exc)
+
+    if not fname:
+        groups = await db.groups_db.active_groups()
+        try:
+            async with asyncio.timeout(_RESOLVE_SWEEP_TIMEOUT):
+                for grp in groups:
+                    chat_id = grp.get("chat_id")
+                    if not chat_id:
+                        continue
+                    try:
+                        member = await asyncio.wait_for(
+                            bot.get_chat_member(chat_id, target_id),
+                            timeout=_GET_CHAT_TIMEOUT,
+                        )
+                    except Exception as exc:
+                        log.debug(
+                            "get_chat_member(%s, %s) failed: %s",
+                            chat_id,
+                            target_id,
+                            exc,
+                        )
+                        continue
+                    user = getattr(member, "user", None)
+                    if user is None:
+                        continue
+                    if user.is_bot or not user.first_name:
+                        continue
+                    fname = user.first_name
+                    uname = user.username
+                    lname = user.last_name
+                    break
+        except TimeoutError:
+            log.debug(
+                "get_chat_member sweep timed out for target=%d after %ds",
+                target_id,
+                _RESOLVE_SWEEP_TIMEOUT,
+            )
+
+    if not fname:
+        db.users_cache.remember_identity(target_id, None, None, None)
+        return str(target_id), None, None
+
+    # * Persist whatever Telegram told us (even a username-less profile)
+    # * so the next view takes the fast path, then mirror it into L1
+    # * because upsert_user invalidates rather than populates.
+    try:
+        await db.users_cache.upsert_user(target_id, uname, fname, lname)
+    except Exception as exc:
+        log.debug("users_cache upsert after resolve failed for %d: %s", target_id, exc)
+    db.users_cache.remember_identity(target_id, fname, uname, lname)
+    return fname, uname, lname

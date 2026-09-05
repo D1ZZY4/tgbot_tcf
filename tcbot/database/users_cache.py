@@ -81,22 +81,70 @@ async def upsert_user_if_changed(
 ) -> bool:
     """Write user profile to DB only when identity data has changed since last cache entry.
 
-    Checks the L1 in-memory mention cache first.  When the cached (first_name,
-    username) pair matches the incoming data, the DB write is skipped entirely
-    and False is returned.  This eliminates the MongoDB round-trip for the vast
-    majority of updates (where identity data has not changed) and makes the
-    hot-path member-cache handler nearly free.
+    Checks the L1 in-memory mention cache first.  When the cached
+    (first_name, username, last_name) triple matches the incoming data, the
+    DB write is skipped entirely and False is returned.  This eliminates
+    the MongoDB round-trip for the vast majority of updates (where identity
+    data has not changed) and makes the hot-path member-cache handler
+    nearly free.  Legacy two-element cache entries count as changed.
 
     Returns True when a DB write was performed, False when skipped.
     """
     cached = user_mention_cache.get(user_id)
     if cached is not CACHE_MISS:
-        # * Cache stores [first_name, username]; compare the two cheap string fields.
+        # * Compare the full triple: last_name-only changes must also write.
         data: list[str | None] = cached  # type: ignore[assignment]
-        if data[0] == first_name and data[1] == username:
+        current = _cached_triple(data)
+        if current == (first_name, username, last_name):
             return False
     await upsert_user(user_id, username, first_name, last_name)
     return True
+
+
+# * L1 mention-cache entries are [first_name, username, last_name] triples.
+# * Readers only use indexes 0 and 1; index 2 exists so change detection
+# * notices last_name-only updates. The not-found sentinel is all-None.
+_NOT_FOUND_SENTINEL: list[str | None] = [None, None, None]
+
+
+def _cached_triple(data: list[str | None]) -> tuple[str | None, str | None, str | None]:
+    """Split a cache entry into (first_name, username, last_name).
+
+    Legacy L2 pairs stored before last_name tracking have length 2; the
+    missing element reads as None, which correctly counts as changed.
+    """
+    return (
+        data[0] if len(data) > 0 else None,
+        data[1] if len(data) > 1 else None,
+        data[2] if len(data) > 2 else None,
+    )
+
+
+def has_recent_identity_attempt(user_id: int) -> bool:
+    """Return True when L1 holds any mention entry (data or sentinel) for the user.
+
+    Identity resolvers use this to skip a repeat Telegram lookup while a
+    previous attempt is still cached; entries expire with the L1 TTL.
+    """
+    return user_mention_cache.get(user_id) is not CACHE_MISS
+
+
+def remember_identity(
+    user_id: int,
+    first_name: str | None,
+    username: str | None,
+    last_name: str | None,
+) -> None:
+    """Mirror a resolved identity into L1 without touching the database.
+
+    Used after a Telegram-side resolve: ``upsert_user`` invalidates rather
+    than populates, so without this the next read would miss L1. A fully
+    empty identity stores the not-found sentinel.
+    """
+    if first_name is None:
+        user_mention_cache.put(user_id, list(_NOT_FOUND_SENTINEL))
+    else:
+        user_mention_cache.put(user_id, [first_name, username, last_name])
 
 
 # ───────── Member cache queries ─────────
@@ -113,21 +161,27 @@ async def get_user_mention_data(user_id: int) -> tuple[str, str | None]:
     Uses ``user_mention_cache`` (Redis-backed TwoLevelCache) to avoid MongoDB
     round-trips on repeated lookups.  Cache is invalidated on every ``upsert_user``.
 
-    Cache sentinel: ``[None, None]`` is stored when the user has no document in
+    Cache sentinel: ``[None, None, None]`` is stored when the user has no document in
     ``member_cache``.  The consumer converts ``None`` → ``str(user_id)`` so the
     returned tuple always contains a non-empty string as the first element.
     """
 
     async def _fetch() -> list[str | None]:
         doc = await db_call(
-            _members().find_one({"user_id": user_id}, {"first_name": 1, "username": 1})
+            _members().find_one(
+                {"user_id": user_id}, {"first_name": 1, "username": 1, "last_name": 1}
+            )
         )
         if doc:
-            return [doc.get("first_name") or str(user_id), doc.get("username")]
-        # * Sentinel: user has no member_cache document.  Stored as [None, None]
+            return [
+                doc.get("first_name") or str(user_id),
+                doc.get("username"),
+                doc.get("last_name"),
+            ]
+        # * Sentinel: user has no member_cache document.  Stored as all-None
         # * so get_first_name() can distinguish "real name" from "no record" and
         # * return the caller's fallback instead of a raw numeric ID string.
-        return [None, None]
+        return list(_NOT_FOUND_SENTINEL)
 
     data = await user_mention_cache.get_or_fetch(user_id, _fetch)
     # * data[0] is None when the user has no member_cache document (sentinel).
@@ -156,7 +210,10 @@ async def get_mention_data_batch(
             data = cast("list[str | None]", cached)
             # * data[0] may be None (not-found sentinel); fall back to str(uid).
             fname = cast("str", data[0]) if data[0] is not None else str(uid)
-            result[uid] = (fname, cast("str | None", data[1]))
+            result[uid] = (
+                fname,
+                cast("str | None", data[1] if len(data) > 1 else None),
+            )
         else:
             missing.append(uid)
 
@@ -168,7 +225,7 @@ async def get_mention_data_batch(
         _members()
         .find(
             {"user_id": {"$in": missing}},
-            {"user_id": 1, "first_name": 1, "username": 1},
+            {"user_id": 1, "first_name": 1, "username": 1, "last_name": 1},
         )
         .to_list(None)
     )
@@ -177,7 +234,7 @@ async def get_mention_data_batch(
         fname = doc.get("first_name") or str(uid)
         uname = doc.get("username")
         # * Populate L1 (and fire-and-forget L2 Redis write) for next lookup.
-        user_mention_cache.put(uid, [fname, uname])
+        user_mention_cache.put(uid, [fname, uname, doc.get("last_name")])
         result[uid] = (fname, uname)
 
     # * Fill fallback for users not found in DB either and cache the sentinel so
@@ -185,7 +242,7 @@ async def get_mention_data_batch(
     # * skip the MongoDB round-trip on the next lookup.
     for uid in missing:
         if uid not in result:
-            user_mention_cache.put(uid, [None, None])
+            user_mention_cache.put(uid, list(_NOT_FOUND_SENTINEL))
             result[uid] = (str(uid), None)
 
     return result
@@ -223,22 +280,28 @@ async def get_first_name(user_id: int, fallback: str = "") -> str:
     a redundant MongoDB round-trip for a user already fetched by either helper.
 
     When the user has no document in ``member_cache``, ``_fetch`` stores the
-    sentinel ``[None, None]`` in the cache.  The sentinel is distinguished from a
+    sentinel ``[None, None, None]`` in the cache.  The sentinel is distinguished from a
     real name so the caller's ``fallback`` is returned instead of a raw numeric ID
     string (e.g. ``"Admin"`` instead of ``"123456789"``).
     """
 
     async def _fetch() -> list[str | None]:
         doc = await db_call(
-            _members().find_one({"user_id": user_id}, {"first_name": 1, "username": 1})
+            _members().find_one(
+                {"user_id": user_id}, {"first_name": 1, "username": 1, "last_name": 1}
+            )
         )
         if doc:
-            return [doc.get("first_name") or str(user_id), doc.get("username")]
-        # * Sentinel: user has no member_cache document.  [None, None] is used
-        # * (not [str(user_id), None]) so the not-found case is unambiguous --
+            return [
+                doc.get("first_name") or str(user_id),
+                doc.get("username"),
+                doc.get("last_name"),
+            ]
+        # * Sentinel: user has no member_cache document.  All-None is used
+        # * (not [str(user_id), None, None]) so the not-found case is unambiguous --
         # * a real first_name is never None, but str(user_id) could coincide
         # * with an actual numeric display name and would suppress fallback.
-        return [None, None]
+        return list(_NOT_FOUND_SENTINEL)
 
     data = await user_mention_cache.get_or_fetch(user_id, _fetch)
     # * data[0] is None when the sentinel is in cache (user not in member_cache DB).

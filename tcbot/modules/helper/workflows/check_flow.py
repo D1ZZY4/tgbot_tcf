@@ -15,6 +15,7 @@ from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from tcbot import database as db
 from tcbot.database.documents import BanDoc
 from tcbot.modules.helper.ban_info import build_ban_detail
+from tcbot.modules.helper.extraction import resolve_user_identity
 from tcbot.modules.helper.formatter import bold, code, esc, italic, mention
 from tcbot.utils.pagination import date_or_unknown, nav_row, paginate
 from tcbot.utils.time_and_date import fmt_dt
@@ -25,10 +26,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 _PAGE_SIZE = 5
-_GET_CHAT_TIMEOUT = 3.0
-# * Overall deadline for the per-group get_chat_member sweep in
-# * _resolve_user_info: bounds /check latency on large federations.
-_RESOLVE_SWEEP_TIMEOUT = 15.0
 _REASON_PREVIEW_LEN = 80
 _BAN_LIST_REASON_LEN = 60
 _BUTTON_TITLE_MAX = 24
@@ -39,99 +36,13 @@ _BTNS_PER_ROW = 3
 
 
 async def _resolve_user_info(bot: Bot, target_id: int) -> tuple[str, str | None]:
-    """Return (display_name, username_or_None); fast-path cache hit, bounded Telegram fallback.
+    """Return (display_name, username_or_None); shared resolver, name pair only.
 
-    The cache lookup is the fast path. When it misses, ``bot.get_chat`` is
-    tried as a single bounded call. If that returns ``None`` or a chat
-    without a ``first_name`` (e.g. the bot has no direct interaction with
-    the user), we walk the connected-group list and call
-    ``get_chat_member`` on each. The target user is normally a member of
-    at least one connected group -- they were banned/muted/warned there
-    in the past -- and ``get_chat_member`` returns the full ``User``
-    object with ``first_name`` and ``username`` even when the user has
-    been kicked, so the lookup succeeds for the common cases.
+    Thin wrapper over :func:`extraction.resolve_user_identity` kept so the
+    profile gather below keeps its shape; the full triple (with last name)
+    lives in the shared resolver.
     """
-    cached = await db.users_cache.get_user(target_id)
-    fname = (cached.get("first_name") or "") if cached else ""
-    uname = (cached.get("username") if cached else None) or None
-
-    if fname and uname:
-        return fname, uname
-
-    if not fname:
-        try:
-            chat = await asyncio.wait_for(
-                bot.get_chat(target_id), timeout=_GET_CHAT_TIMEOUT
-            )
-            fname = fname or (chat.first_name or "")
-            uname = uname or chat.username
-        except Exception as exc:
-            log.debug("get_chat(%s) failed: %s", target_id, exc)
-
-    if not fname:
-        # * Fall back to ``get_chat_member`` on a known connected group.
-        # * This handles the case where ``bot.get_chat`` returns ``None`` (the
-        # * bot has no direct interaction with the user) or a chat object
-        # * without a ``first_name``. The user is normally a member of at
-        # * least one connected group (the bot banned/muted/warned them
-        # * there at some point), so the lookup succeeds.
-        groups = await db.groups_db.active_groups()
-        # * Bound the whole sweep: without an overall deadline a large
-        # * federation turns one /check on an unknown ID into O(G) x 3s of
-        # * handler latency. On timeout the normal numeric fallback below
-        # * still replies.
-        try:
-            async with asyncio.timeout(_RESOLVE_SWEEP_TIMEOUT):
-                for grp in groups:
-                    chat_id = grp.get("chat_id")
-                    if not chat_id:
-                        continue
-                    try:
-                        member = await asyncio.wait_for(
-                            bot.get_chat_member(chat_id, target_id),
-                            timeout=_GET_CHAT_TIMEOUT,
-                        )
-                    except Exception as exc:
-                        log.debug(
-                            "get_chat_member(%s, %s) failed: %s",
-                            chat_id,
-                            target_id,
-                            exc,
-                        )
-                        continue
-                    user = getattr(member, "user", None)
-                    if user is None:
-                        continue
-                    if user.is_bot or not user.first_name:
-                        # * Banned/kicked user or a bot: keep trying the next group.
-                        continue
-                    fname = user.first_name
-                    uname = user.username
-                    # * Persist the resolved identity so future /check / /checkme
-                    # * / /tcstats calls hit the cache and skip the per-group
-                    # * get_chat_member loop. Best-effort: a DB failure here is
-                    # * logged at debug and falls through to the function's normal
-                    # * fallback (str(target_id)).
-                    try:
-                        await db.users_cache.upsert_user(
-                            target_id, uname, fname, user.last_name
-                        )
-                    except Exception as exc:
-                        log.debug(
-                            "users_cache upsert after get_chat_member failed for %d: %s",
-                            target_id,
-                            exc,
-                        )
-                    break
-        except TimeoutError:
-            log.debug(
-                "get_chat_member sweep timed out for target=%d after %ds",
-                target_id,
-                _RESOLVE_SWEEP_TIMEOUT,
-            )
-
-    if not fname:
-        fname = str(target_id)
+    fname, uname, _lname = await resolve_user_identity(bot, target_id)
     return fname, uname
 
 
