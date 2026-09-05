@@ -13,6 +13,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 - **Dependency refresh** (`uv.lock`): `uv lock --upgrade` to latest within pinned bounds. Bumped `anyio` 4.14.2 -> 4.15.1, `click` 8.4.2 -> 8.5.0, `idna` 3.18 -> 3.19, `pymongo` 4.17.0 -> 4.18.0, `ruff` 0.16.3 -> 0.16.6; added `typing-extensions` 4.16.0, dropped unneeded `colorama`. Direct dependencies were already latest in range. `apscheduler` stays pinned at `==3.11.3` (accepted CVE-2026-31072 exception; v4 API is incompatible with `scheduler.py`).
 
+- **Todo discipline and slim AGENTS** (`.agents/rules/tooling-validation.md`, `AGENTS.md`, `.agents/rules/security-rules.md`): new Todo and Plan Discipline section (one `in_progress`, complete only after verification, blockers as follow-up todos). `AGENTS.md` Code Style, Architecture, Commit, and Security sections reduced to pointers at their owning rules/docs; webhook parser boundary added to `security-rules.md`.
+
 ### Fixed
 
 - **Zero-latency identity refresh** (`tcbot/modules/helper/extraction.py`, `check_flow.py`, `stats_flow.py`): detail views render instantly from cache while `launch_identity_refresh()` syncs in the background for the next view (gated by `identity_needs_refresh()` so fresh profiles cost nothing). Chat detail refreshes titles the same way. Re-verification keeps the 7-day max-age gate.

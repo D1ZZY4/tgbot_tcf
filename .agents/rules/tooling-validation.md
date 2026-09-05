@@ -82,6 +82,21 @@ For each requested improvement, update, fix, or audit:
 Performance claims require measurements. Prefer bounded concurrency and explicit
 failure behavior.
 
+## Todo and Plan Discipline
+
+Work is tracked with a todo list, never with memory or good intentions:
+
+- Create a todo list for any task with 3 or more steps; update it in real
+  time as work proceeds.
+- Exactly one item is `in_progress` at any moment.
+- Mark an item `completed` only after its work is actually done, including
+  its verification. Never mark complete on intent, and never batch several
+  completions into one update.
+- New instructions arriving mid-task become new todos first, then work.
+- If blocked or partial, keep the item `in_progress` and add a follow-up
+  todo describing the blocker.
+- Do not start the next item while the current one is unverified.
+
 ## Pre-Edit Checklist
 
 Before editing TCF Bot code, verify:

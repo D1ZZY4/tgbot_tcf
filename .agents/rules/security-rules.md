@@ -49,3 +49,5 @@ commands live in [`tooling-validation.md`](tooling-validation.md).
 - Do not remove meaningful behavior merely to silence a warning.
 - Treat every moderation flow change as potentially high impact: verify success
   and failure paths, alternate entry points, and state transitions.
+- The webhook route in `alive.py` rejects non-JSON content types at the parser
+  level; do not weaken this without a security review.

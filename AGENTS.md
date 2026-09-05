@@ -240,49 +240,34 @@ Use `config.env.example` as the complete template.
 
 ## Code Style and Naming
 
-Follow the detailed rules in
-[`.agents/rules/tooling-validation.md`](.agents/rules/tooling-validation.md),
-[`.agents/rules/code-style.md`](.agents/rules/code-style.md),
-[`.agents/rules/comment-style.md`](.agents/rules/comment-style.md),
-[`.agents/rules/docs-rules.md`](.agents/rules/docs-rules.md),
-[`.agents/rules/security-rules.md`](.agents/rules/security-rules.md), and
-[`.agents/rules/asyncio-gather-rules.md`](.agents/rules/asyncio-gather-rules.md)
-before editing source code.
-
-Repository conventions:
-
-- Use Python 3.14 syntax and 4-space indentation.
-- Place `from __future__ import annotations` as the first non-comment line in Python modules.
-- Prefer built-in generics such as `list[str]`, `dict[str, int]`, and `int | None`.
-- Avoid inline imports and wildcard imports.
-- Use Ruff for formatting and import cleanup.
-- Use pyright for static type checking.
-- Name async command handlers `cmd_*` and event handlers `on_*`.
-- Name conversation states `WAITING_*`.
-- Keep all bot messages HTML-only (`parse_mode='HTML'`) and escape user-provided text through the formatter helpers.
-- Use `tcbot.utils.time_and_date` for UTC timestamps, display formatting, and duration measurement.
+Conventions live in the rules files; this section is only a pointer.
+Follow [`.agents/rules/code-style.md`](.agents/rules/code-style.md) for
+style, [`security-rules.md`](.agents/rules/security-rules.md) for
+authorization, [`asyncio-gather-rules.md`](.agents/rules/asyncio-gather-rules.md)
+for async work, and [`comment-style.md`](.agents/rules/comment-style.md) for
+comments before editing source code.
 
 ## Architecture Rules
 
-- `tcbot/__main__.py` builds the PTB application with `ApplicationBuilder`, configures HTTP timeouts and connection pools, starts Flask keep-alive, registers the global rate limiter, loads module handlers, connects to MongoDB, ensures indexes, seeds the initial owner, attaches the error reporter, and starts webhook transport when a public URL is available. Local development without a public URL falls back to polling.
-- `tcbot/alive.py` runs Flask in a daemon thread, exposing `GET /` (plain-text `OK`) and `GET /health` (JSON subsystem status), and receives webhook updates at `POST /webhook`.
-- `tcbot/modules/__init__.py` discovers top-level module files, applies `MODULES_LOAD` / `MODULES_NO_LOAD` filters, and fails startup if an enabled module cannot be imported.
-- Handlers should use database helper modules instead of calling `mongos.col()` directly.
-- Multi-group actions should use `tcbot.utils.dispatch.fan_out()` to bound concurrent Telegram API calls, integrating the Telegram circuit breaker so network errors trip the circuit but expected API refusals (403, 400) do not.
-- Role checks should use the canonical role helpers in `tcbot.database.users_roles` and `tcbot.modules.helper.decorators.resolve_and_check`.
-- Ban/kick flows must auto-demote users who currently hold a federation role via `Demote.execute()`.
-- New conversation logic belongs in `tcbot/modules/helper/workflows/*_flow.py`.
-- The scheduler (`tcbot/database/scheduler.py`) runs APScheduler 3.11.3 `AsyncIOScheduler` with `MongoDBJobStore` inside a dedicated asyncio background task, providing persistent scheduled unbans and warn-expiry jobs across restarts.
-- `TwoLevelCache` (`tcbot/database/cache.py`) provides L1 in-memory TTLCache with optional L2 Redis, serializing mutations through a FIFO queue for consistency across processes.
+Ownership and runtime behavior live in the rules and architecture docs;
+this section is only a pointer.
+
+- Module, helper, workflow, database, and utility boundaries:
+  [`.agents/rules/code-style.md`](.agents/rules/code-style.md) and
+  [`docs/architecture/modules.md`](docs/architecture/modules.md).
+- Startup, transport, scheduler, and cache behavior:
+  [`docs/architecture/repository-map.md`](docs/architecture/repository-map.md)
+  and [`docs/architecture/database.md`](docs/architecture/database.md).
+- Moderation authorization and role safety:
+  [`.agents/rules/security-rules.md`](.agents/rules/security-rules.md).
 
 ## Commit and Pull Request Guidance
 
 For automated CI/CD and auto-PR workflows, see [`docs/operations/ci-cd.md`](docs/operations/ci-cd.md) for more details. Commit-specific instructions belong to the active repository workflow, not to the public `docs/` category.
 
-Use focused commits and scoped conventional prefixes when appropriate:
-
-- `fix(auth): ...`, `feat(moderation): ...`, `refactor(cache): ...`
-- `docs(setup): ...`, `chore(deps): ...`
+Use focused commits and scoped conventional prefixes (see
+[`CONTRIBUTING.md`](CONTRIBUTING.md#pull-requests)); keep one logical fix
+per commit with its own `CHANGELOG.md` slice.
 
 Pull requests should include:
 
@@ -294,9 +279,8 @@ Pull requests should include:
 
 ## Security Requirements
 
-- Do not commit tokens, MongoDB URIs, API keys, passwords, or private chat IDs that should remain secret.
-- Do not print or log secrets.
-- Do not change `config.env` as part of normal code or documentation work.
-- Keep database schema changes backward-compatible unless a migration plan is included.
-- Update every read path if a stored MongoDB field is added, renamed, or removed.
-- The webhook route in `alive.py` rejects non-JSON content types at the parser level; do not weaken this without a security review.
+Authorization boundaries, secrets, and compatibility live in
+[`.agents/rules/security-rules.md`](.agents/rules/security-rules.md).
+The non-negotiable summary: no secrets in code, logs, or commits; no
+`config.env` edits during normal work; backward-compatible schemas unless
+a migration plan ships with the change.
