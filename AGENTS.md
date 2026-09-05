@@ -18,7 +18,7 @@ Every new conversation in this repository must start by reading the canonical ru
 - [`.agents/rules/tooling-validation.md`](.agents/rules/tooling-validation.md):
   workflow, dependency, documentation, and validation rules
 - [`.agents/rules/code-style.md`](.agents/rules/code-style.md): Python style,
-  architecture, handler, database, and async rules
+  architecture, handler, and database rules
 - [`.agents/rules/comment-style.md`](.agents/rules/comment-style.md): comments,
   docstrings, section dividers, and Markdown rules
 - [`.agents/rules/docs-rules.md`](.agents/rules/docs-rules.md): documentation
@@ -40,7 +40,7 @@ for the complete read/update rules. Skipping either step is a serious defect.
 
 ## Skills and Sub-Agents Policy
 
-**Skills in `.agents/skills/` auto-invoke whenever their trigger matches**: no need for the user to ask. If you are about to write code in `tcbot/`, read [`code-style.md`](.agents/rules/code-style.md), plus [`security-rules.md`](.agents/rules/security-rules.md) for authorization work or [`asyncio-gather-rules.md`](.agents/rules/asyncio-gather-rules.md) for async work. If you are about to edit docs, read [`docs-rules`](.agents/rules/docs-rules.md). Same for `mongodb-query-optimizer`, `feature-reviewer`. Compose multiple skills when one task spans multiple areas.
+**Skills in `.agents/skills/` auto-invoke whenever their trigger matches**: no need for the user to ask. If you are about to write code in `tcbot/`, read [`code-style.md`](.agents/rules/code-style.md), plus [`security-rules.md`](.agents/rules/security-rules.md) for authorization work or [`asyncio-gather-rules.md`](.agents/rules/asyncio-gather-rules.md) for async work. If you are about to edit docs, read [`docs-rules`](.agents/rules/docs-rules.md). Same for `mongodb-query-optimizer`, `feature-reviewer`. When several skills match, load them all, prioritize by task relevance, and read every loaded skill's full instructions — never half. Compose multiple skills when one task spans multiple areas.
 
 The skills directory also previously included meta-tools for the agent itself (`find-skills`, `general-sub-agent`, `skill-creator`) that have been removed: they were tooling for the agent harness, not for the bot codebase, and had no project-specific value.
 
@@ -83,7 +83,9 @@ Current stack:
 - Motor async MongoDB driver with connection pool configuration
 - Flask keep-alive / health-check server
 - Optional Redis L2 cache (`redis[hiredis]>=8.0,<9`) with in-memory L1 fallback
-- `cbor2` for Redis serialization, `cachetools` for L1 TTLCache
+- Tagged JSON values for Redis serialization (`cbor2` remains pinned in
+  `pyproject.toml` but no current code imports it)
+- `cachetools` for L1 TTLCache
 - `uv` for dependency management and lockfile-based installs
 - Ruff for formatting and lint checks
 - pyright for static type checking
@@ -206,7 +208,7 @@ docker compose up --build
 
 ## Configuration and Secrets
 
-Configuration is loaded from environment variables. For local development, `python-dotenv` loads `config.env` when present. For Replit or hosted deployment, store secrets in the platform secret manager instead of committing them. See [`docs/getting-started/setup.md`](docs/getting-started/setup.md) for detailed setup instructions and [`replit.md`](replit.md) for Replit-specific notes.
+Configuration is loaded from environment variables. For local development, `python-dotenv` loads `config.env` (falling back to `.env`) when present. For Replit or hosted deployment, store secrets in the platform secret manager instead of committing them. See [`docs/getting-started/setup.md`](docs/getting-started/setup.md) for detailed setup instructions and [`replit.md`](replit.md) for Replit-specific notes.
 
 Never commit real credentials. Required secret values include:
 
@@ -277,13 +279,10 @@ Repository conventions:
 
 For automated CI/CD and auto-PR workflows, see [`docs/operations/ci-cd.md`](docs/operations/ci-cd.md) for more details. Commit-specific instructions belong to the active repository workflow, not to the public `docs/` category.
 
-Use focused commits and conventional prefixes when appropriate:
+Use focused commits and scoped conventional prefixes when appropriate:
 
-- `feat:` for user-facing features
-- `fix:` for bug fixes
-- `refactor:` for behavior-preserving code changes
-- `docs:` for documentation changes
-- `chore:` for maintenance work
+- `fix(auth): ...`, `feat(moderation): ...`, `refactor(cache): ...`
+- `docs(setup): ...`, `chore(deps): ...`
 
 Pull requests should include:
 

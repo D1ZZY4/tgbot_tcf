@@ -55,6 +55,15 @@ The six files under `.agents/rules/` are the canonical sources for engineering
 constraints. Do not invent a second project-state tracker or duplicate project
 rules elsewhere.
 
+## Skill loading
+
+Skills in `.agents/skills/` auto-invoke on trigger match; never wait to be
+asked. When several skills match one task, load them all — never just the
+first or most obvious one. Prioritize by task relevance, then read every
+loaded skill's full instructions including all bundled references, never
+half. Compose multiple skills when one task spans multiple areas
+(e.g. feature work spanning code, database, docs, and review).
+
 ## Rules hygiene
 
 - One rule lives in exactly one file. Before adding a rule, check all six

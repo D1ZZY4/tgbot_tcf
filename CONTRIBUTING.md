@@ -1,21 +1,24 @@
 # Contributing to TCF Bot
 
-Thank you for helping improve TCF Bot. This guide covers the normal workflow
-for code, documentation, configuration, and review contributions.
+Thank you for helping improve TCF Bot. This guide is written for **human
+contributors**. If you are an AI agent, start with [`AGENTS.md`](AGENTS.md)
+and the six canonical rule files under [`.agents/rules/`](.agents/rules/)
+instead — this file is the human-friendly summary, not the agent contract.
 
 ## Before You Start
 
 1. Read [`README.md`](README.md) for the project overview.
 2. Read [`AGENTS.md`](AGENTS.md) for repository architecture and conventions.
-3. Read the six canonical engineering rule files:
-   - [Tooling and validation](.agents/rules/tooling-validation.md)
-   - [Code style and architecture](.agents/rules/code-style.md)
-   - [Comment and documentation style](.agents/rules/comment-style.md)
-   - [Documentation style and maintenance](.agents/rules/docs-rules.md)
-   - [Security and authorization](.agents/rules/security-rules.md)
-   - [Asyncio gather and fan-out](.agents/rules/asyncio-gather-rules.md)
-4. Check [`CHANGELOG.md`](CHANGELOG.md) and existing documentation for the area
-   you plan to change.
+3. Skim [`CHANGELOG.md`](CHANGELOG.md) and the existing documentation for the
+   area you plan to change.
+4. If your change touches Python behavior, also read the relevant rule files:
+   [Tooling and validation](.agents/rules/tooling-validation.md),
+   [Code style and architecture](.agents/rules/code-style.md), and
+   [Comment and documentation style](.agents/rules/comment-style.md).
+   Authorization work additionally needs
+   [Security](.agents/rules/security-rules.md); async work additionally needs
+   [Asyncio](.agents/rules/asyncio-gather-rules.md); docs work additionally
+   needs [Docs](.agents/rules/docs-rules.md).
 
 For user-facing setup, use [`docs/getting-started/setup.md`](docs/getting-started/setup.md).
 For deployment, use [`replit.md`](replit.md) and
@@ -30,7 +33,7 @@ Requirements:
 - MongoDB for runtime work
 - Redis only when testing the optional L2 cache
 
-Install the locked dependencies (Replit only):
+Install the locked dependencies:
 
 ```bash
 uv sync --frozen
@@ -67,7 +70,7 @@ Run the checks relevant to the change. For most code changes:
 ```bash
 ruff format --check .
 ruff check .
-pyright tcbot/
+pyright .
 python -m compileall -q tcbot
 python -c "import tcbot"
 git diff --check

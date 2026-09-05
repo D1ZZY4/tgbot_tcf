@@ -10,7 +10,10 @@ Last updated: 2026-05-29
 Before invoking this skill, confirm the read/update rules in
 [`tooling-validation.md`](../../rules/tooling-validation.md#read-before-work-and-update-after-work),
 [`code-style.md`](../../rules/code-style.md), and
-[`comment-style.md`](../../rules/comment-style.md). When reviewing, flag a
+[`comment-style.md`](../../rules/comment-style.md). For authorization scope
+also read [`security-rules.md`](../../rules/security-rules.md); for async
+scope also read [`asyncio-gather-rules.md`](../../rules/asyncio-gather-rules.md).
+When reviewing, flag a
 missing [`CHANGELOG.md`](../../../CHANGELOG.md) entry as a review finding.
 
 Use this skill when the user asks for a code review, final check, regression review, or "is this ready?" review of project changes.
@@ -71,7 +74,7 @@ Keep feedback practical. Prioritize actionable issues over style preferences.
 
 - Changes to `.github/workflows/*.yml` are documented in [`docs/operations/ci-cd.md`](../../../docs/operations/ci-cd.md).
 - Auto-fix workflow still creates a PR (does not commit directly to main) and uses the fixed `auto-fix/ruff` branch.
-- Dependency-update, performance, and verification workflows still gate on validation before opening a PR or issue.
+- Dependency-update workflow still validates before opening a PR.
 - Telegram notifications still use `BOT_TOKEN`/`OWNER_ID` secrets and skip cleanly when absent.
 
 ## Review Workflow

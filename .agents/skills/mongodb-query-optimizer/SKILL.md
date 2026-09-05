@@ -43,18 +43,19 @@ TCF Bot stores all MongoDB access behind domain helper modules:
 
 Current critical indexes in `ensure_indexes()` (verify against `tcbot/database/mongos.py` before recommending):
 
-- `bans`: `banned_user_id + is_active`, unique `ban_id`, `is_active + timestamp desc + ban_id desc`, `banned_user_id + timestamp desc`.
+- `bans`: `(banned_user_id, is_active, timestamp desc, ban_id desc)`, unique `ban_id`, sparse `(banned_user_id, appeal_log_msg_id)`, `(is_active, timestamp desc, ban_id desc)`, `(banned_user_id, timestamp desc, ban_id desc)`.
 - `tc_owners`: unique `user_id`.
 - `tc_admins`: unique `user_id`.
 - `tc_roles`: unique `user_id`, plus `role` for staff roster lookups.
-- `federated_groups`: `chat_id + is_active`, unique `chat_id`.
+- `federated_groups`: `(chat_id, is_active)`, unique `(chat_id)`, plus `(is_active)`.
 - `pending_joins`: unique `chat_id`.
-- `member_cache`: unique `user_id`, plus `username` and `first_name` for the smart-mention/batch-query helpers (`get_user_mention_data`, `get_mention_data_batch`, `get_first_names_batch`, partial-name search in `extract_target`).
-- `warns`: `user_id + chat_id + timestamp desc`, plus `user_id + timestamp desc` for cross-chat history views.
-- `warn_counts`: unique `user_id + chat_id`.
-- `kicks`: `user_id + timestamp desc`.
-- `mutes`: `user_id + timestamp desc`.
-- `promotion_requests`: unique `request_id`, plus `target_id + status`.
+- `member_cache`: unique `user_id`, `(user_id, first_name, username)` for batch projections, `username`, `first_name`, and a TTL on `last_updated`.
+- `warns`: `(user_id, chat_id, timestamp desc)`, `(user_id, timestamp desc)`, `(user_id, chat_id, timestamp asc)`, `(timestamp)`.
+- `warn_counts`: unique `(user_id, chat_id)`, `(updated_at)`, `(user_id, count, updated_at desc)`.
+- `kicks`: `(user_id, timestamp desc)` plus `(chat_id)`.
+- `mutes`: `(user_id, timestamp desc)` plus `(chat_id)`.
+- `active_mutes`: unique `(user_id)`, `(until_date)`, `(user_id, until_date)`.
+- `promotion_requests`: unique `(request_id)`, `(target_id, status)`, `(status, requested_date)`, and partial-unique `(target_id)` where `status` is pending.
 
 Verify these before recommending duplicates.
 
