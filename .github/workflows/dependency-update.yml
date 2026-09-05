@@ -8,7 +8,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  issues: write
 
 jobs:
   update-dependencies:
@@ -62,12 +61,26 @@ jobs:
         if: steps.update.outputs.has_updates == 'true'
         run: uv sync --frozen
 
+      - name: Validate updated dependencies
+        if: steps.update.outputs.has_updates == 'true'
+        env:
+          BOT_TOKEN: "000000:dummy-token-for-ci"
+          MONGODB_URI: "mongodb://localhost:27017"
+          OWNER_ID: "1"
+        run: |
+          uv run ruff format --check .
+          uv run ruff check .
+          uv run python -c "import tcbot; print('import OK')"
+
       - name: Create PR
         if: steps.update.outputs.has_updates == 'true'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           BRANCH="deps/auto-update-$(date +%Y%m%d)"
+          if git ls-remote --heads origin "$BRANCH" | grep -q "$BRANCH"; then
+            BRANCH="${BRANCH}-run${GITHUB_RUN_NUMBER}"
+          fi
 
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

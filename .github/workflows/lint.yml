@@ -16,10 +16,12 @@ jobs:
     timeout-minutes: 10
 
     env:
-      # Bot configuration secrets required for the import check
-      BOT_TOKEN:               ${{ secrets.BOT_TOKEN }}
-      MONGODB_URI:             ${{ secrets.MONGODB_URI }}
-      OWNER_ID:                ${{ secrets.OWNER_ID }}
+      # Dummy values for the import check: tcbot validates presence and
+      # shape at import time but never connects, so no real secrets are
+      # needed (and fork PRs have no secrets to inject).
+      BOT_TOKEN: "000000:dummy-token-for-lint"
+      MONGODB_URI: "mongodb://localhost:27017"
+      OWNER_ID: "1"
 
     steps:
       - uses: actions/checkout@v7

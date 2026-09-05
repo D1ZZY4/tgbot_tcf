@@ -20,7 +20,10 @@ jobs:
     timeout-minutes: 10
 
     concurrency:
-      group: auto-fix-${{ github.ref }}
+      # * Shared fixed branch below: serialize all refs so concurrent runs
+      # * cannot clobber each other's force-push. A newer run cancels the
+      # * older one, which then restarts cleanly from origin/main.
+      group: auto-fix-ruff
       cancel-in-progress: true
 
     steps:
@@ -82,7 +85,7 @@ jobs:
             git stash
             git checkout "$BRANCH"
             git reset --hard origin/main
-            git stash pop || true
+            git stash pop
             git add -A
             git commit -m "chore: Auto-fix code quality issues
 

@@ -5,9 +5,11 @@ on:
   schedule:
     # Resurrection fallback every 15 min. If the self-chain ever breaks (a run
     # crashes before it can dispatch its successor), this restarts coverage
-    # within ~15 min instead of waiting for the next day. The concurrency group
-    # serializes it: when a healthy run is already active, the cron run just
-    # queues and is discarded, so it never causes a second poller.
+    # within ~15 min instead of waiting for the next day. The concurrency
+    # group serializes it: when a healthy run is already active, the cron
+    # run queues behind it (it is NOT discarded), so back-to-back crons can
+    # pile up behind a long holder; each queued run still self-chains on
+    # completion.
     - cron: "*/15 * * * *"
 
 concurrency:
