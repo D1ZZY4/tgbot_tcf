@@ -15,7 +15,10 @@ from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from tcbot import database as db
 from tcbot.database.documents import BanDoc
 from tcbot.modules.helper.ban_info import build_ban_detail
-from tcbot.modules.helper.extraction import sync_user_identity
+from tcbot.modules.helper.extraction import (
+    identity_needs_refresh,
+    launch_identity_refresh,
+)
 from tcbot.modules.helper.formatter import bold, code, esc, italic, mention
 from tcbot.utils.pagination import date_or_unknown, nav_row, paginate
 from tcbot.utils.time_and_date import fmt_dt
@@ -36,14 +39,24 @@ _BTNS_PER_ROW = 3
 
 
 async def _resolve_user_info(bot: Bot, target_id: int) -> tuple[str, str | None]:
-    """Return (display_name, username_or_None); verified sync, name pair only.
+    """Return (display_name, username_or_None) instantly from cache.
 
-    Thin wrapper over :func:`extraction.sync_user_identity` kept so the
-    profile gather below keeps its shape; the profile is an explicit
-    detail view, so the cached identity is verified live and updated on
-    mismatch instead of served stale.
+    Stale-while-revalidate: the profile renders with zero added latency
+    while a background sync refreshes the stored identity for the next
+    view. Thin wrapper kept so the profile gather below keeps its shape.
     """
-    fname, uname, _lname = await sync_user_identity(bot, target_id)
+    try:
+        doc = await db.users_cache.get_user(target_id)
+    except Exception as exc:
+        log.debug("_resolve_user_info cache read failed for %d: %s", target_id, exc)
+        doc = None
+    if doc:
+        fname = doc.get("first_name") or str(target_id)
+        uname = doc.get("username") or None
+    else:
+        fname, uname = str(target_id), None
+    if identity_needs_refresh(doc):
+        launch_identity_refresh(bot, target_id)
     return fname, uname
 
 

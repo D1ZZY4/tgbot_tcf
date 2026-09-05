@@ -21,7 +21,10 @@ from telegram import (
 from tcbot import cfg
 from tcbot import database as db
 from tcbot.modules.helper.ban_info import build_ban_detail
-from tcbot.modules.helper.extraction import sync_user_identity
+from tcbot.modules.helper.extraction import (
+    identity_needs_refresh,
+    launch_identity_refresh,
+)
 from tcbot.modules.helper.formatter import bold, code, esc, mention, user_ref
 from tcbot.utils.pagination import date_or_unknown, nav_row, paginate
 from tcbot.utils.time_and_date import TELEGRAM_LOOKUP_TIMEOUT
@@ -48,6 +51,41 @@ _ERR_USER_NOT_FOUND = "User not found in this page."
 _ERR_GROUP_NOT_FOUND = "Group not found in this page."
 _ERR_BAN_NOT_FOUND = "Ban record not found in this page."
 _ERR_RESULT_UNAVAILABLE = "Result no longer available."
+
+
+# * Strong references to in-flight background-refresh tasks; prevents GC
+# * before the coroutine completes (same pattern as harvest task sets).
+_refresh_tasks: set[asyncio.Task[None]] = set()
+
+
+async def _refresh_group_title(bot: Bot, chat_id: int) -> None:
+    """Verify a group title live and persist renames (background, best-effort)."""
+    try:
+        live_chat = await asyncio.wait_for(
+            bot.get_chat(chat_id), timeout=TELEGRAM_LOOKUP_TIMEOUT
+        )
+    except Exception as exc:
+        log.debug("background title check failed for %d: %s", chat_id, exc)
+        return
+    if live_chat is None or not live_chat.title:
+        return
+    try:
+        await db.groups_db.refresh_group_title(chat_id, live_chat.title)
+    except Exception as exc:
+        log.debug("background title refresh failed for %d: %s", chat_id, exc)
+
+
+def launch_group_title_refresh(bot: Bot, chat_id: int) -> None:
+    """Fire-and-forget group title sync for detail views (zero added latency)."""
+    try:
+        task = asyncio.get_running_loop().create_task(
+            _refresh_group_title(bot, chat_id)
+        )
+    except RuntimeError:
+        log.debug("group title refresh skipped: no running event loop.")
+        return
+    _refresh_tasks.add(task)
+    task.add_done_callback(_refresh_tasks.discard)
 
 
 def _back_main() -> list[InlineKeyboardButton]:
@@ -327,19 +365,10 @@ class Stats:
         fname = u.get("first_name") or str(uid)
         uname = u.get("username")
         last_name = u.get("last_name") or "-"
-        if not u.get("username"):
-            # * Sparse doc (e.g. created by a ban-by-ID that only knew the
-            # * first name): verify live so username/last name show current
-            # * values. The sync persists what it finds; docs that already
-            # * carry a username skip Telegram entirely.
-            try:
-                r_fname, r_uname, r_lname = await sync_user_identity(bot, uid)
-            except Exception as exc:
-                log.debug("stats user_detail sync failed for %d: %s", uid, exc)
-            else:
-                fname, uname = r_fname, r_uname
-                if r_lname:
-                    last_name = r_lname
+        # * Stale-while-revalidate: render instantly from cache; refresh in
+        # * background so the next view is current. Zero added latency.
+        if identity_needs_refresh(u):
+            launch_identity_refresh(bot, uid)
         commit = date_or_unknown(u.get("commit_date"))
         seen = date_or_unknown(u.get("last_updated"))
 
@@ -412,23 +441,9 @@ class Stats:
             )
             return text, kb
         title = grp.get("title", "Unknown")
-        # * Verify the title live: renames otherwise linger until reconnect.
-        # * Bounded single call; failures keep the cached title.
-        try:
-            live_chat = await asyncio.wait_for(
-                bot.get_chat(chat_id), timeout=TELEGRAM_LOOKUP_TIMEOUT
-            )
-        except Exception as exc:
-            log.debug("stats chat_detail get_chat failed for %d: %s", chat_id, exc)
-            live_chat = None
-        if live_chat is not None and live_chat.title and live_chat.title != title:
-            title = live_chat.title
-            try:
-                await db.groups_db.refresh_group_title(chat_id, live_chat.title)
-            except Exception as exc:
-                log.debug(
-                    "stats chat_detail title refresh failed for %d: %s", chat_id, exc
-                )
+        # * Stale-while-revalidate: render instantly; renames persist in
+        # * background for the next view. Zero added latency.
+        launch_group_title_refresh(bot, chat_id)
         added_by = grp.get("added_by", 0)
         adder_fname, adder_uname = await db.users_cache.get_user_mention_data(added_by)
         date_str = date_or_unknown(grp.get("added_date"))

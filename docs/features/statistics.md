@@ -88,7 +88,7 @@ Testers (n)
 
 ### Users (`stats_users:<page>` and `stats_user_item:<page>:<idx>[:stable]`)
 
-`Stats.users_list(page)` paginates `users_cache.all_users()` (sorted by `first_name`). Each row shows the cached display name, ID, and `@username` when present. Numbered buttons open `Stats.user_detail(bot, page, idx, stable)`, which verifies sparse documents live via `extraction.sync_user_identity` before rendering:
+`Stats.users_list(page)` paginates `users_cache.all_users()` (sorted by `first_name`). Each row shows the cached display name, ID, and `@username` when present. Numbered buttons open `Stats.user_detail(bot, page, idx, stable)`, which renders instantly from cache and refreshes stale/sparse documents in the background via `extraction.launch_identity_refresh` (zero added latency):
 
 ```text
 User Details
@@ -109,7 +109,7 @@ so a user can move from identity details to federation history.
 
 ### Connected Chats (`stats_chats:<page>` and `stats_chat_item:<page>:<idx>[:stable]`)
 
-`Stats.chats_list(page)` paginates `groups_db.active_groups()`. Each row shows the chat title and ID. Numbered buttons open `Stats.chat_detail(bot, page, idx, stable)`, which verifies the title live via `bot.get_chat` and persists renames through `groups_db.refresh_group_title`:
+`Stats.chats_list(page)` paginates `groups_db.active_groups()`. Each row shows the chat title and ID. Numbered buttons open `Stats.chat_detail(bot, page, idx, stable)`, which renders the cached title instantly and re-verifies renames in the background (persisted via `groups_db.refresh_group_title`):
 
 ```text
 Group Details

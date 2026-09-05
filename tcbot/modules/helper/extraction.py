@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from tcbot import database as db
@@ -15,6 +16,8 @@ from tcbot.modules.helper.identity import ANONYMOUS_BOT_ID, TELEGRAM_USER_ID
 from tcbot.utils.time_and_date import TELEGRAM_LOOKUP_TIMEOUT, to_utc, utc_now
 
 if TYPE_CHECKING:
+    from collections.abc import Mapping
+
     from telegram import Bot, Chat, ChatFullInfo, Message, Update, User
 
 log = logging.getLogger(__name__)
@@ -29,6 +32,10 @@ _RESOLVE_SWEEP_TIMEOUT = 15.0
 # * live. Harvest writes on every observed message keep active users far
 # * below this; it only bites for silent users (banned, lurkers).
 _SYNC_MAX_AGE_S = 7 * 24 * 3600
+
+# * Strong references to in-flight background-refresh tasks; prevents GC
+# * before the coroutine completes (same pattern as harvest task sets).
+_refresh_tasks: set[asyncio.Task[None]] = set()
 
 
 async def _safe_get_chat(bot: Bot, ident: str | int) -> Chat | ChatFullInfo | None:
@@ -355,3 +362,52 @@ async def sync_user_identity(
         log.debug("users_cache upsert after sync failed for %d: %s", target_id, exc)
     db.users_cache.remember_identity(target_id, fname, uname, lname)
     return fname, uname, lname
+
+
+def identity_needs_refresh(doc: Mapping[str, object] | None) -> bool:
+    """Return True when a cached doc should be re-verified in background.
+
+    Missing docs, sparse docs (no username), and complete docs older than
+    ``_SYNC_MAX_AGE_S`` all need a refresh; fresh complete docs do not.
+    Pure predicate over an already-fetched document: never touches I/O.
+    """
+    if not doc:
+        return True
+    fname = doc.get("first_name") or ""
+    uname = doc.get("username") or None
+    if not (fname and uname):
+        return True
+    try:
+        updated_at = doc.get("last_updated")
+        if not isinstance(updated_at, datetime):
+            return True
+        age = (utc_now() - to_utc(updated_at)).total_seconds()
+    except Exception as exc:
+        log.debug("identity age check failed: %s", exc)
+        return True
+    return age > _SYNC_MAX_AGE_S
+
+
+async def _refresh_identity(bot: Bot, target_id: int) -> None:
+    """Run :func:`sync_user_identity` and swallow failures at debug level."""
+    try:
+        await sync_user_identity(bot, target_id)
+    except Exception as exc:
+        log.debug("background identity refresh failed for %d: %s", target_id, exc)
+
+
+def launch_identity_refresh(bot: Bot, target_id: int) -> None:
+    """Fire-and-forget identity sync for detail views (zero added latency).
+
+    The view renders instantly from cache; this refreshes the stored
+    identity in the background so the *next* view is current. Callers
+    holding the document should gate with :func:`identity_needs_refresh`
+    so fresh profiles cost nothing.
+    """
+    try:
+        task = asyncio.get_running_loop().create_task(_refresh_identity(bot, target_id))
+    except RuntimeError:
+        log.debug("identity refresh skipped: no running event loop.")
+        return
+    _refresh_tasks.add(task)
+    task.add_done_callback(_refresh_tasks.discard)
