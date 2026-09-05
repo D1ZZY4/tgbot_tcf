@@ -185,7 +185,7 @@ async def global_rate_limit_handler(
     if not text:
         return
 
-    if not any(text.startswith(p) for p in cfg.prefixes):
+    if not any(text.startswith(p) for p in cfg.prefixes if p):
         return  # * plain chat message - never rate-limit
 
     wait = await _cmd_limiter.check(uid)

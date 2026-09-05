@@ -8,9 +8,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import UTC, datetime
 from typing import ClassVar
-
-from tcbot.utils.timedate_format import utc_now
 
 # ────────────────────── Console Log Formatter ───────────────────── #
 # * Color-coded bracket format: [HH:MM] [DD/MM/YY] [LEVEL] [module:line] → message
@@ -53,7 +52,9 @@ class BotLogFormatter(logging.Formatter):
         Appends formatted exception and stack-info blocks when present so that
         ``log.exception()`` and ``exc_info=True`` calls produce fully colored output.
         """
-        now = utc_now()
+        # * Use the record's creation time, not now: buffered or delayed
+        # * formatting would otherwise misorder events.
+        now = datetime.fromtimestamp(record.created, tz=UTC)
         level_color, level_label = self._LEVELS.get(record.levelno, ("\033[0m", "???"))
         module = record.name.split(".")[-1]
         msg_color = level_color if record.levelno in self._COLORED_MSG else self._MS
@@ -109,12 +110,14 @@ class TelegramErrorHandler(logging.Handler):
         try:
             loop = asyncio.get_running_loop()
         except RuntimeError:
+            self.handleError(record)
             return
         try:
             from tcbot.utils import (  # noqa: PLC0415
                 error_reporter,
             )
         except ImportError:
+            self.handleError(record)
             return
 
         task = loop.create_task(error_reporter.report_record(record))

@@ -192,13 +192,18 @@ def main_menu_kb() -> InlineKeyboardMarkup:
 
 def group_start_kb(bot_username: str) -> InlineKeyboardMarkup:
     """Keyboard for /start sent inside a group - sends user to PM."""
-    pm_url = f"https://t.me/{bot_username}?start=menu"
-    return InlineKeyboardMarkup(
-        [
-            [InlineKeyboardButton("Open in PM", url=pm_url)],
-            [InlineKeyboardButton("Help", callback_data="help_menu_group")],
-        ]
-    )
+    rows: list[list[InlineKeyboardButton]] = []
+    if bot_username:
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    "Open in PM",
+                    url=f"https://t.me/{bot_username}?start=menu",
+                )
+            ]
+        )
+    rows.append([InlineKeyboardButton("Help", callback_data="help_menu_group")])
+    return InlineKeyboardMarkup(rows)
 
 
 def _build_topic_rows(

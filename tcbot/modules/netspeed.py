@@ -28,6 +28,10 @@ log = logging.getLogger(__name__)
 _RL_PERIOD_S: int = 60
 _RL_CMD_LIMIT: int = 3
 
+# * Upper bound for one Ookla run (best-server + download + upload +
+# * share). Normal runs finish well under a minute.
+_SPEEDTEST_TIMEOUT: int = 180
+
 # ──────────────────────── Module metadata ───────────────────────── #
 
 __module_name__ = "Netspeed"
@@ -140,7 +144,17 @@ async def cmd_speedtest(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     try:
         loop = asyncio.get_running_loop()
-        result: dict = await loop.run_in_executor(None, _run_speedtest)
+        # * Ookla can hang for minutes on a bad route; bound the whole run
+        # * so the handler (and its executor thread) cannot stall forever.
+        async with asyncio.timeout(_SPEEDTEST_TIMEOUT):
+            result: dict = await loop.run_in_executor(None, _run_speedtest)
+    except TimeoutError:
+        log.warning("Speedtest timed out after %ds", _SPEEDTEST_TIMEOUT)
+        try:
+            await notice.edit_text("Speed test timed out. Please try again later.")
+        except Exception as edit_exc:
+            log.debug("cmd_speedtest timeout-edit failed: %s", edit_exc)
+        return
     except Exception:
         log.exception("Speedtest failed")
         try:
@@ -199,6 +213,9 @@ async def cmd_speedtest(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             log.debug("cmd_speedtest parse-fail edit failed: %s", edit_exc)
         return
     share_url: str | None = result.get("share")
+    if share_url and not share_url.startswith("https://"):
+        log.warning("Speedtest returned non-https share URL; sending text only")
+        share_url = None
     try:
         if share_url:
             # * Edit the "please wait" notice to the result text and send the

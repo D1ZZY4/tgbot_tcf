@@ -44,8 +44,9 @@ __additional_msg__ = (
 @decorators.log_execution
 async def on_additional_menu(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Render the Additional Info page when the button is tapped."""
-    assert update.callback_query is not None
     q = update.callback_query
+    if q is None:
+        return
     try:
         await q.answer()
     except Exception as exc:
