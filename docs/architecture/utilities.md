@@ -167,8 +167,8 @@ Single source of truth for all Telegram HTML markup. Both the utils layer (e.g. 
 | `code(text)` | `<code>...</code>` with escaped content. |
 | `pre(text)` | `<pre>...</pre>` monospace block with escaped content. |
 | `link(text, url)` | HTML anchor tag. Escape or validate untrusted URLs before passing. |
-| `mention(user_id, name, username=None)` | Smart mention with username link and always-included `tg://user?id=...` link. Backward-compatible alias for `user_ref()`. |
-| `user_ref(user_id, name, username=None)` | Action-summary reference. Renders `Name \| @username (tg://user?id=ID)` when a username is available, `Name (tg://user?id=ID)` otherwise, or just the `tg://` link when the name is the bare numeric fallback. |
+| `mention(user_id, name, username=None)` | ID-based mention, always `Name (tg://user?id=...)`. Backward-compatible alias for `user_ref()`. |
+| `user_ref(user_id, name, username=None)` | Action-summary reference. Always renders `Name (tg://user?id=ID)` from the numeric ID; usernames are never used. Renders just the `tg://` link when the name is the bare numeric fallback. |
 
 Always import from `tcbot.utils.formatter` in utils-layer code. Modules-layer code may continue using `tcbot.modules.helper.formatter` (the shim) for backward compatibility.
 

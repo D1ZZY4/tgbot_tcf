@@ -69,22 +69,15 @@ def esc(text: str) -> str:
 def user_ref(user_id: int, name: str, username: str | None = None) -> str:
     """Format a complete user reference for action confirmation messages.
 
-    When a username is available: ``Name | @username (tg://user?id=ID)``.
-    When no username: ``Name (tg://user?id=ID)``.
-    When the name is the bare numeric ID: just the ``tg://user?id=ID`` link.
-
-    Use this helper instead of the ``mention() - code(id)`` inline pattern so
-    that every action summary (ban, unban, warn, kick, mute) formats the
-    target consistently and without duplication.
+    Always ``Name (tg://user?id=ID)``: the ID link is the single source of
+    truth for identity. Usernames are never used: they can change, be
+    reused, or be missing, while the numeric ID always resolves. The
+    ``username`` parameter is accepted for backward compatibility and
+    ignored. When the name itself is the bare numeric fallback, only the
+    link is rendered to avoid ``ID (ID)`` duplication.
     """
+    _ = username
     id_link = f'<a href="tg://user?id={user_id}">{user_id}</a>'
-    username = safe_username(username)
-    if username:
-        return (
-            f"{html.escape(str(name))} | "
-            f'<a href="https://t.me/{html.escape(username)}">'
-            f"{html.escape(str(username))}</a> ({id_link})"
-        )
     if str(name) == str(user_id):
         return id_link
     return f"{html.escape(str(name))} ({id_link})"
