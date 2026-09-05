@@ -185,6 +185,13 @@ async def ensure_indexes() -> None:
         col("mutes").create_index([("user_id", 1), ("timestamp", -1)]),
         col("promotion_requests").create_index([("request_id", 1)], unique=True),
         col("promotion_requests").create_index([("target_id", 1), ("status", 1)]),
+        # * One pending request per user: concurrent promotes for the same
+        # * target collapse into a single queue entry instead of duplicates.
+        col("promotion_requests").create_index(
+            [("target_id", 1)],
+            unique=True,
+            partialFilterExpression={"status": "pending"},
+        ),
         # * Serves queues_db.all_pending() which filters on status and sorts
         # * by requested_date; compound avoids an in-memory sort.
         col("promotion_requests").create_index([("status", 1), ("requested_date", 1)]),

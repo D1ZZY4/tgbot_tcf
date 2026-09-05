@@ -91,11 +91,15 @@ async def all_pending() -> list[PromotionRequestDoc]:
     )
 
 
-async def resolve(request_id: str, status: str, resolved_by: int) -> None:
-    """Mark a pending promotion request as resolved."""
-    await db_call(
+async def resolve(request_id: str, status: str, resolved_by: int) -> bool:
+    """Mark a pending promotion request as resolved.
+
+    The ``pending`` filter makes the claim atomic: concurrent decisions on
+    the same request resolve exactly once, and late taps get ``False``.
+    """
+    result = await db_call(
         _requests().update_one(
-            {"request_id": request_id},
+            {"request_id": request_id, "status": "pending"},
             {
                 "$set": {
                     "status": status,
@@ -105,3 +109,4 @@ async def resolve(request_id: str, status: str, resolved_by: int) -> None:
             },
         )
     )
+    return result.modified_count > 0

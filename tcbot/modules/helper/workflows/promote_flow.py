@@ -10,6 +10,8 @@ import asyncio
 import logging
 from typing import TYPE_CHECKING
 
+from pymongo.errors import DuplicateKeyError
+
 from tcbot import cfg
 from tcbot import database as db
 from tcbot.modules.helper import keyboards, parse_logmsg
@@ -192,6 +194,17 @@ class Promote:
             db.users_roles.get_owner_id(),
             return_exceptions=True,
         )
+        if isinstance(request_id, DuplicateKeyError):
+            # * Lost the insert race: another promote queued first under the
+            # * pending-unique index. Report the existing request, not an error.
+            log.info(
+                "Promotion request race for target=%d; using existing entry",
+                target_id,
+            )
+            return False, (
+                f"There's already a pending promotion request for "
+                f"{user_ref(target_id, target_fname)}."
+            )
         if isinstance(request_id, BaseException):
             log.error("Failed to enqueue promotion request: %s", request_id)
             return False, "Failed to queue the promotion request. Please try again."
