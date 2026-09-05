@@ -108,6 +108,8 @@ jobs:
           deadline=$(( $(date +%s) + WINDOW_SECONDS ))
           handover_at=$(( deadline - HANDOVER_LEAD ))
           handover_done=false
+          restarts=0
+          first_death=0
 
           # Supervisory loop
           while :; do
@@ -118,6 +120,19 @@ jobs:
             if ! kill -0 "$BOT_PID" 2>/dev/null; then
               echo "::warning::Bot process $BOT_PID died. Restarting."
               tail -n 40 bot.log || true
+              restarts=$((restarts + 1))
+              [ "$first_death" = "0" ] && first_death=$now
+              # * Fail-fast config (bad token/URI) would otherwise restart
+              # * ~600x per window, hammering Telegram/Mongo. Five deaths
+              # * within 10 minutes aborts; the */15 cron covers recovery.
+              if [ "$restarts" -ge 5 ] && [ $((now - first_death)) -lt 600 ]; then
+                echo "::error::Bot died 5 times within 10 minutes; giving up."
+                exit 1
+              fi
+              # * Linear backoff (capped) so repeated crashes do not hot-loop.
+              backoff=$((30 * restarts))
+              [ "$backoff" -gt 300 ] && backoff=300
+              sleep "$backoff"
               BOT_PID="$(start_bot)"
               echo "Bot restarted with PID $BOT_PID"
             fi
