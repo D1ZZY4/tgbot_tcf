@@ -15,7 +15,7 @@ from dataclasses import dataclass
 
 from dotenv import find_dotenv, load_dotenv
 
-load_dotenv(find_dotenv("config.env"))
+load_dotenv(find_dotenv("config.env") or find_dotenv(".env"))
 
 log = logging.getLogger(__name__)
 
@@ -231,18 +231,34 @@ class Configs:
 
     @property
     def main_group_id(self) -> int:
-        """Return MAIN_GROUP as int, or 0 when the env variable is unset."""
-        return int(self.main_group) if self.main_group else 0
+        """Return MAIN_GROUP as int, or 0 when unset or invalid."""
+        try:
+            return int(self.main_group) if self.main_group else 0
+        except ValueError:
+            log.warning("Invalid MAIN_GROUP '%s', defaulting to 0.", self.main_group)
+            return 0
 
     @property
     def main_channel_id(self) -> int:
-        """Return MAIN_CHANNEL as int, or 0 when the env variable is unset."""
-        return int(self.main_channel) if self.main_channel else 0
+        """Return MAIN_CHANNEL as int, or 0 when unset or invalid."""
+        try:
+            return int(self.main_channel) if self.main_channel else 0
+        except ValueError:
+            log.warning(
+                "Invalid MAIN_CHANNEL '%s', defaulting to 0.", self.main_channel
+            )
+            return 0
 
     @property
     def extend_group_id(self) -> int:
-        """Return EXTEND_GROUP as int, or 0 when the env variable is unset."""
-        return int(self.extend_group) if self.extend_group else 0
+        """Return EXTEND_GROUP as int, or 0 when unset or invalid."""
+        try:
+            return int(self.extend_group) if self.extend_group else 0
+        except ValueError:
+            log.warning(
+                "Invalid EXTEND_GROUP '%s', defaulting to 0.", self.extend_group
+            )
+            return 0
 
     @property
     def logs_tuple(self) -> tuple[int, int | None]:
@@ -267,7 +283,7 @@ class Configs:
     @staticmethod
     def load(env_file: str = "config.env") -> Configs:
         """Load all configuration from environment variables and return a Configs instance."""
-        load_dotenv(find_dotenv(env_file))
+        load_dotenv(find_dotenv(env_file) or find_dotenv(".env"))
 
         # ! BOT_TOKEN and MONGODB_URI are strictly required for runtime startup.
         token = _required_env("BOT_TOKEN")
@@ -278,7 +294,7 @@ class Configs:
         owner_id = _owner_id_from_env()
 
         raw_prefixes = os.getenv("PREFIXES", '["/", "!", "."]')
-        prefixes = parse_list(raw_prefixes) or ["/"]
+        prefixes = parse_list(raw_prefixes) or ["/", "!", "."]
 
         db_name = os.getenv("DB_NAME", "tcbot").strip() or "tcbot"
 
@@ -287,7 +303,7 @@ class Configs:
             owner_id=owner_id,
             mongodb_uri=mongodb_uri,
             db_name=db_name,
-            community_name=os.getenv("COMMUNITY_NAME", "Bot").strip(),
+            community_name=os.getenv("COMMUNITY_NAME", "Bot").strip() or "Bot",
             prefixes=prefixes,
             port=os.getenv("PORT", str(_DEFAULT_PORT)).strip(),
             main_group=os.getenv("MAIN_GROUP", "").strip(),
@@ -306,7 +322,9 @@ class Configs:
             appeal_timeout_seconds=_int_from_env(
                 "APPEAL_TIMEOUT_SECONDS", 600, minimum=1
             ),
-            appeal_discussion_topic=_int_from_env("APPEAL_DISCUSSION_TOPIC", 0),
+            appeal_discussion_topic=_int_from_env(
+                "APPEAL_DISCUSSION_TOPIC", 0, minimum=0
+            ),
             extend_group=os.getenv("EXTEND_GROUP", "").strip(),
             album_debounce_seconds=_int_from_env(
                 "ALBUM_DEBOUNCE_SECONDS", 2, minimum=1
