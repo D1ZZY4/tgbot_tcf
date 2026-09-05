@@ -69,15 +69,11 @@ def esc(text: str) -> str:
 def user_ref(user_id: int, name: str, username: str | None = None) -> str:
     """Format a complete user reference for action confirmation messages.
 
-    Always ``Name (tg://user?id=ID)``: the ID link is the single source of
-    truth for identity. Usernames are never used: they can change, be
-    reused, or be missing, while the numeric ID always resolves. The
-    ``username`` parameter is accepted for backward compatibility and
-    ignored. When the name itself is the bare numeric fallback, only the
-    link is rendered to avoid ``ID (ID)`` duplication.
+    Always a clickable ``FullName`` resolving via ``tg://user?id=ID``: the
+    numeric ID is the single source of truth for identity. Usernames are
+    never used: they can change, be reused, or be missing, while the
+    numeric ID always resolves. The ``username`` parameter is accepted for
+    backward compatibility and ignored.
     """
     _ = username
-    id_link = f'<a href="tg://user?id={user_id}">{user_id}</a>'
-    if str(name) == str(user_id):
-        return id_link
-    return f"{html.escape(str(name))} ({id_link})"
+    return f'<a href="tg://user?id={user_id}">{html.escape(str(name))}</a>'
