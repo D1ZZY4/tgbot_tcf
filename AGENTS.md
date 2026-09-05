@@ -153,7 +153,7 @@ Current stack:
 │       ├── logger.py          Logging setup
 │       ├── pagination.py      Paginated message rendering
 │       ├── prefixes.py        Command prefix resolution
-│       └── timedate_format.py UTC timestamp helpers
+│       └── time_and_date.py    Central clock: UTC storage/display + monotonic measure
 ├── docs/                     Developer documentation grouped by category
 ├── .agents/                   Coding skills and style rules
 ├── config.env.example        Environment variable template
@@ -258,7 +258,7 @@ Repository conventions:
 - Name async command handlers `cmd_*` and event handlers `on_*`.
 - Name conversation states `WAITING_*`.
 - Keep all bot messages HTML-only (`parse_mode='HTML'`) and escape user-provided text through the formatter helpers.
-- Use `tcbot.utils.timedate_format` for UTC timestamps and display formatting.
+- Use `tcbot.utils.time_and_date` for UTC timestamps, display formatting, and duration measurement.
 
 ## Architecture Rules
 

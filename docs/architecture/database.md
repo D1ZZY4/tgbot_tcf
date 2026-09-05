@@ -281,5 +281,5 @@ All `*_db.py` modules use a TypedDict from `documents.py` when inserting records
 - Do not call `col()` from command modules or workflow files.
 - Keep new collection helpers in `*_db.py` files.
 - Keep stored schema changes backward-compatible unless a migration plan exists.
-- Use `utc_now()` from `tcbot.utils.timedate_format` for stored timestamps.
+- Use `utc_now()` from `tcbot.utils.time_and_date` for stored timestamps.
 - Never log secrets or connection strings.

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from typing import TYPE_CHECKING
 
 from telegram.ext import CallbackQueryHandler, ContextTypes, MessageHandler
@@ -24,6 +23,7 @@ from tcbot.modules.helper.formatter import bold, code, esc
 from tcbot.modules.helper.keyboards import tcgroups_kb
 from tcbot.modules.helper.parse_editmsg import safe_edit
 from tcbot.utils.prefixes import build_prefixed_filters
+from tcbot.utils.time_and_date import monotonic
 
 log = logging.getLogger(__name__)
 
@@ -105,7 +105,7 @@ async def cmd_tcfgroups(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     if ctx.user_data is not None:
         ctx.user_data["groups_cache"] = groups
-        ctx.user_data["groups_cache_at"] = time.monotonic()
+        ctx.user_data["groups_cache_at"] = monotonic()
 
     try:
         await msg.reply_text(
@@ -131,7 +131,7 @@ async def _toggle(
     groups = None
     if ctx.user_data is not None:
         cached_at = ctx.user_data.get("groups_cache_at", 0.0)
-        if time.monotonic() - float(cached_at) < _GROUPS_CACHE_TTL_S:
+        if monotonic() - float(cached_at) < _GROUPS_CACHE_TTL_S:
             groups = ctx.user_data.get("groups_cache")
     if groups:
         # * Answer first so an expired query surfaces immediately instead of
@@ -155,7 +155,7 @@ async def _toggle(
             groups = []
         if ctx.user_data is not None:
             ctx.user_data["groups_cache"] = groups
-            ctx.user_data["groups_cache_at"] = time.monotonic()
+            ctx.user_data["groups_cache_at"] = monotonic()
         await safe_edit(
             cbq_msg,  # type: ignore[arg-type]
             _render(groups, detailed=detailed),

@@ -10,7 +10,7 @@ from typing import Any
 
 from telegram import InlineKeyboardButton
 
-from tcbot.utils.timedate_format import fmt_dt
+from tcbot.utils.time_and_date import fmt_dt
 
 
 def paginate(items: list, page: int, page_size: int) -> tuple[list, int, int]:

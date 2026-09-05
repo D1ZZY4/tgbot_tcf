@@ -14,7 +14,7 @@ flowchart TD
     Utils --> Prefixes[prefixes.py<br/>command prefix builders]
     Utils --> Logging[logger.py<br/>logger config]
     Utils --> ErrorReporter[error_reporter.py<br/>error sink]
-    Utils --> TimeDate[timedate_format.py<br/>UTC + display]
+    Utils --> TimeDate[time_and_date.py<br/>UTC + display + measure]
     Utils --> Pagination[pagination.py<br/>paginate, nav_row, date_or_unknown]
     Utils --> Fmt[formatter.py<br/>HTML escape, bold, code, mention]
     Dispatch --> CB
@@ -125,9 +125,10 @@ The reporter classifies expected Telegram errors, trims long tracebacks, escapes
 1. PTB error handler for handler exceptions.
 2. Asyncio loop exception handler for background task failures.
 
-## `timedate_format.py`
+## `time_and_date.py`
 
-This module is the single source of truth for UTC datetime handling.
+This module is the single source of truth for every clock read: UTC datetime
+handling plus monotonic measurement.
 
 | Function | Use |
 |---|---|
@@ -135,8 +136,11 @@ This module is the single source of truth for UTC datetime handling.
 | `to_utc(dt)` | Normalize naive or aware datetimes before arithmetic. |
 | `fmt_dt(dt)` | Display datetimes as `DD-MM-YYYY | HH:MM`. |
 | `utc_now_str()` | Display the current UTC time using `fmt_dt()`. |
+| `from_timestamp(ts)` | Convert a POSIX timestamp (e.g. log record time) to aware UTC. |
+| `monotonic()` | Monotonic clock in seconds, for measuring durations. |
+| `elapsed_ms(start)` | Milliseconds since a `monotonic()` reading. |
 
-Do not call `datetime.utcnow()` or `datetime.now(timezone.utc)` outside this utility.
+Do not call `datetime.utcnow()` or `datetime.now(timezone.utc)` outside this utility. Do not read `time.monotonic()` directly; use the helpers above. The only exception is Redis rate limiting, which needs wall-clock `time.time()` scores shared across processes.
 
 ## `pagination.py`
 

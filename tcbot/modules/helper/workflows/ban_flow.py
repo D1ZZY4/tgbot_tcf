@@ -33,7 +33,7 @@ from tcbot.utils.dispatch import (
     is_benign_telegram_error,
 )
 from tcbot.utils.prefixes import ALL_PREFIXES_CMD_FILTER
-from tcbot.utils.timedate_format import to_utc, utc_now
+from tcbot.utils.time_and_date import to_utc, utc_now
 
 if TYPE_CHECKING:
     from collections.abc import Callable

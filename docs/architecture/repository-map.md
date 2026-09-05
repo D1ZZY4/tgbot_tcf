@@ -85,7 +85,7 @@ tcbot/
     ├── logger.py           Console formatter and error log handler
     ├── pagination.py       Shared paginate(), nav_row(), date_or_unknown() helpers
     ├── prefixes.py         Prefix parsing and command filters
-    └── timedate_format.py  UTC datetime helpers
+    └── time_and_date.py    Central clock: UTC storage/display + monotonic measure
 ```
 
 ## Ownership boundaries

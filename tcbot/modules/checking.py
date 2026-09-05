@@ -21,7 +21,7 @@ from tcbot.modules.helper.parse_editmsg import safe_edit_cb
 from tcbot.modules.helper.parse_link import message_link
 from tcbot.modules.helper.workflows.check_flow import Check
 from tcbot.utils.prefixes import build_prefixed_filters, parse_cmd_args
-from tcbot.utils.timedate_format import fmt_dt
+from tcbot.utils.time_and_date import fmt_dt
 
 if TYPE_CHECKING:
     from telegram import Update

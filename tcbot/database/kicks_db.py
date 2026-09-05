@@ -11,7 +11,7 @@ from typing import TYPE_CHECKING
 from tcbot.database.documents import KickDoc
 from tcbot.database.mongos import col, db_call
 from tcbot.database.types import ChatId, UserId
-from tcbot.utils.timedate_format import utc_now
+from tcbot.utils.time_and_date import utc_now
 
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorCollection

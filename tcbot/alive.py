@@ -21,7 +21,7 @@ from tcbot import cfg
 from tcbot.database import mongos, redis_client
 from tcbot.database import scheduler as sched_mod
 from tcbot.utils import circuit_breaker as _cb
-from tcbot.utils.timedate_format import utc_now
+from tcbot.utils.time_and_date import utc_now
 
 if TYPE_CHECKING:
     import telegram

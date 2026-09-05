@@ -16,7 +16,7 @@ from typing import TYPE_CHECKING, cast
 from tcbot.database.cache import CACHE_MISS, user_mention_cache
 from tcbot.database.documents import UserDoc
 from tcbot.database.mongos import col, db_call
-from tcbot.utils.timedate_format import utc_now
+from tcbot.utils.time_and_date import utc_now
 
 if TYPE_CHECKING:
     from motor.motor_asyncio import AsyncIOMotorCollection

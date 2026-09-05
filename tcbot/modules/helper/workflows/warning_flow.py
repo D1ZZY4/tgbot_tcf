@@ -23,7 +23,7 @@ from tcbot.utils.dispatch import (
     fan_out,
     is_benign_telegram_error,
 )
-from tcbot.utils.timedate_format import utc_now
+from tcbot.utils.time_and_date import utc_now
 
 if TYPE_CHECKING:
     from collections.abc import Callable

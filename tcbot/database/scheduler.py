@@ -41,7 +41,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from tcbot.database.bans_db import deactivate_ban as _bans_deactivate
 from tcbot.database.mongos import col as _col
 from tcbot.database.mongos import db_call as _db_call
-from tcbot.utils.timedate_format import utc_now
+from tcbot.utils.time_and_date import utc_now
 
 log = logging.getLogger(__name__)
 

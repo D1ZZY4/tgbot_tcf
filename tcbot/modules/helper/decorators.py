@@ -21,6 +21,7 @@ if TYPE_CHECKING:
 from tcbot import cfg
 from tcbot import database as db
 from tcbot.modules.helper.identity import ANONYMOUS_BOT_ID
+from tcbot.utils.time_and_date import elapsed_ms, monotonic
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -46,7 +47,7 @@ class _RateLimiter:
 
     def check(self, uid: int) -> float:
         """Return 0.0 if allowed (call recorded), or seconds to wait if denied."""
-        now = time.monotonic()
+        now = monotonic()
         dq = self._buckets.get(uid)
 
         if dq is None:
@@ -266,15 +267,14 @@ def log_execution(
         """Emit entry, exit, and exception traces at DEBUG level around ``func``."""
         uid = update.effective_user.id if update.effective_user else "?"
         name = func.__name__
-        t0 = time.monotonic()
+        t0 = monotonic()
         log.debug("[%s] uid=%s enter", name, uid)
         try:
             result = await func(update, ctx)
         except Exception:
-            elapsed = (time.monotonic() - t0) * 1_000
-            log.exception("[%s] uid=%s raised after %.1fms", name, uid, elapsed)
+            log.exception("[%s] uid=%s raised after %.1fms", name, uid, elapsed_ms(t0))
             raise
-        log.debug("[%s] uid=%s ok (%.1fms)", name, uid, (time.monotonic() - t0) * 1_000)
+        log.debug("[%s] uid=%s ok (%.1fms)", name, uid, elapsed_ms(t0))
         return result
 
     return _wrapper

@@ -8,8 +8,9 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import UTC, datetime
 from typing import ClassVar
+
+from tcbot.utils.time_and_date import from_timestamp
 
 # ────────────────────── Console Log Formatter ───────────────────── #
 # * Color-coded bracket format: [HH:MM] [DD/MM/YY] [LEVEL] [module:line] → message
@@ -54,7 +55,7 @@ class BotLogFormatter(logging.Formatter):
         """
         # * Use the record's creation time, not now: buffered or delayed
         # * formatting would otherwise misorder events.
-        now = datetime.fromtimestamp(record.created, tz=UTC)
+        now = from_timestamp(record.created)
         level_color, level_label = self._LEVELS.get(record.levelno, ("\033[0m", "???"))
         module = record.name.split(".")[-1]
         msg_color = level_color if record.levelno in self._COLORED_MSG else self._MS

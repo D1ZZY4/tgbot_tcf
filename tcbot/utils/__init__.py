@@ -13,7 +13,7 @@ from . import (
     formatter,
     logger,
     prefixes,
-    timedate_format,
+    time_and_date,
 )
 
 __all__ = [
@@ -23,5 +23,5 @@ __all__ = [
     "formatter",
     "logger",
     "prefixes",
-    "timedate_format",
+    "time_and_date",
 ]

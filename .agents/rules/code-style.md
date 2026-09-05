@@ -159,7 +159,7 @@ Rules:
 
 - Do not use `datetime.utcnow()`.
 - Do not inline `datetime.now(timezone.utc)` outside
-  `tcbot.utils.timedate_format`.
+  `tcbot.utils.time_and_date`.
 - Use `utc_now()` for database timestamps and elapsed-time checks.
 - Use `to_utc(dt)` before arithmetic when a database value may be naive.
 - Use `fmt_dt(dt)` or `utc_now_str()` for user-visible timestamps.

@@ -36,9 +36,10 @@ multitasking), so no explicit locking is required.
 from __future__ import annotations
 
 import logging
-import time
 from enum import Enum
 from typing import TYPE_CHECKING, TypeVar
+
+from tcbot.utils.time_and_date import monotonic
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
@@ -111,7 +112,7 @@ class CircuitBreaker:
         """Current state; auto-transitions OPEN to HALF_OPEN after timeout."""
         if (
             self._state is CircuitState.OPEN
-            and time.monotonic() - self._opened_at >= self._recovery_timeout
+            and monotonic() - self._opened_at >= self._recovery_timeout
         ):
             self._state = CircuitState.HALF_OPEN
             log.info(
@@ -210,7 +211,7 @@ class CircuitBreaker:
                 self._recovery_timeout,
             )
             self._state = CircuitState.OPEN
-            self._opened_at = time.monotonic()
+            self._opened_at = monotonic()
         elif self._failure_count >= self._failure_threshold:
             log.warning(
                 "Circuit [%s]: CLOSED -> OPEN (%d consecutive failures; "
@@ -220,7 +221,7 @@ class CircuitBreaker:
                 self._recovery_timeout,
             )
             self._state = CircuitState.OPEN
-            self._opened_at = time.monotonic()
+            self._opened_at = monotonic()
         self._release_probe()
 
     def _release_probe(self) -> None:

@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import time
 from typing import TYPE_CHECKING
 
 from speedtest import ConfigRetrievalError, Speedtest
@@ -17,6 +16,7 @@ from telegram.ext import ContextTypes, MessageHandler
 from tcbot.modules.helper import decorators, replies
 from tcbot.modules.helper.formatter import bold, code
 from tcbot.utils.prefixes import build_prefixed_filters
+from tcbot.utils.time_and_date import elapsed_ms, monotonic
 
 if TYPE_CHECKING:
     from telegram import Update
@@ -113,16 +113,16 @@ async def cmd_ping(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     msg = update.effective_message
     if msg is None:
         return
-    t0 = time.monotonic()
+    t0 = monotonic()
     try:
         sent = await msg.reply_text("Pinging...")
     except Exception as exc:
         log.debug("cmd_ping initial reply failed: %s", exc)
         return
-    elapsed_ms = (time.monotonic() - t0) * 1_000
+    ping_ms = elapsed_ms(t0)
     try:
         await sent.edit_text(
-            f"Pong! Round-trip: {code(f'{elapsed_ms:.1f} ms')}",
+            f"Pong! Round-trip: {code(f'{ping_ms:.1f} ms')}",
             parse_mode="HTML",
         )
     except Exception as exc:

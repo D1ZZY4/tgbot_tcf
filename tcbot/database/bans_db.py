@@ -12,7 +12,7 @@ from pymongo import ReturnDocument
 
 from tcbot.database.documents import BanDoc
 from tcbot.database.mongos import col, db_call, make_short_id
-from tcbot.utils.timedate_format import utc_now
+from tcbot.utils.time_and_date import utc_now
 
 if TYPE_CHECKING:
     from datetime import datetime

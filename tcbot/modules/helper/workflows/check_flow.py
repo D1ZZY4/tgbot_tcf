@@ -17,7 +17,7 @@ from tcbot.database.documents import BanDoc
 from tcbot.modules.helper.ban_info import build_ban_detail
 from tcbot.modules.helper.formatter import bold, code, esc, italic, mention
 from tcbot.utils.pagination import date_or_unknown, nav_row, paginate
-from tcbot.utils.timedate_format import fmt_dt
+from tcbot.utils.time_and_date import fmt_dt
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable, Callable

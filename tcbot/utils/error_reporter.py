@@ -13,14 +13,13 @@ import logging
 import platform
 import re
 import sys
-import time
 import traceback
 from typing import TYPE_CHECKING
 
 import telegram.error as _te
 
 from tcbot.utils.formatter import bold, code, pre
-from tcbot.utils.timedate_format import utc_now
+from tcbot.utils.time_and_date import monotonic, utc_now
 
 if TYPE_CHECKING:
     from telegram import Bot
@@ -185,7 +184,7 @@ def _fingerprint_record(record: logging.LogRecord) -> tuple:
 
 def _seen_recently(fp: tuple) -> bool:
     """Mark fp as seen now; return True if it was already seen within the window."""
-    now = time.monotonic()
+    now = monotonic()
     for k in list(_recent):
         if now - _recent[k] > _DEDUPE_WINDOW:
             del _recent[k]
