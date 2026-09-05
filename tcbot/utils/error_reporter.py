@@ -218,6 +218,28 @@ def _dedup(exc: BaseException | None, record: logging.LogRecord | None) -> bool:
 # ────────────────────── Error Classification ────────────────────── #
 
 
+_ACTION_HINTS: tuple[tuple[str, str], ...] = (
+    ("[DB]", "Check MongoDB reachability and credentials, then retry the action."),
+    ("Rate Limit", "Telegram asked to slow down; no action needed unless it persists."),
+    ("Timed Out", "Transient Telegram hiccup; retry the action."),
+    ("Polling Conflict", "Two bot instances are polling; stop the duplicate."),
+    ("Invalid Token", "Token revoked or wrong; update BOT_TOKEN and restart."),
+    ("Forbidden", "Bot lacks admin rights in the target chat; re-promote it."),
+    ("Bad Request", "Check the reported call arguments for a bad ID or text."),
+    ("Network", "Transient connectivity issue; retry the action."),
+    ("Timeout", "Operation exceeded its deadline; retry the action."),
+    ("Code Bug", "Needs a code fix; see the traceback below."),
+)
+
+
+def _action_hint(label: str) -> str:
+    """Return the operator action line matching a classify label."""
+    for marker, hint in _ACTION_HINTS:
+        if marker in label:
+            return hint
+    return "Needs a code fix; see the traceback below."
+
+
 def _classify(exc: BaseException | None) -> str:
     """Return a human-readable label tag for the exception."""
     if exc is None:
@@ -363,6 +385,7 @@ def build_error_message(
 
     file_part, func_name, line_no = _location(exc, record)
     label = _classify(exc)
+    action = _action_hint(label)
 
     tb_block = ""
     if exc and exc.__traceback__:
@@ -382,6 +405,7 @@ def build_error_message(
         f"{bold('Error Report')}\n"
         f"{sep}\n"
         f"{bold('Type:')} {label}\n"
+        f"{bold('Action:')} {_esc(action)}\n"
         f"{bold('Where:')} {code(f'{file_part}:{line_no}')} in {code(func_name)}\n"
         f"{bold('When:')} {time_str} - {date_str}\n"
         f"{bold('Host:')} Python {py_ver} @ {_esc(host)}\n"
@@ -393,12 +417,47 @@ def build_error_message(
 
 
 # ───────────────────────── Low-Level Send ───────────────────────── #
+# * Shipping is throttled: at most _SEND_BUDGET reports per window go to
+# * LOG_ERRORS. Overflow is counted, and a single summary is sent when the
+# * next window opens. Without this, escalating more paths to error-level
+# * would risk Telegram FloodWait during incident storms.
+
+_SEND_BUDGET: int = 20
+_SEND_WINDOW: float = 60.0
+_send_window_start: float = 0.0
+_sent_in_window: int = 0
+_suppressed_in_window: int = 0
 
 
-async def send_to_log_errors(text: str) -> None:
-    """Fire-and-forget send to LOG_ERRORS channel."""
+async def _ship_throttled(text: str) -> None:
+    """Send to LOG_ERRORS within budget, else count for the summary."""
+    global _send_window_start, _sent_in_window, _suppressed_in_window
     if not _bot or not _chat_id:
         return
+    now = monotonic()
+    if now - _send_window_start >= _SEND_WINDOW:
+        _send_window_start = now
+        _sent_in_window = 0
+        if _suppressed_in_window:
+            suppressed = _suppressed_in_window
+            _suppressed_in_window = 0
+            try:
+                await _bot.send_message(
+                    _chat_id,
+                    f"Error reporter: {suppressed} further error(s) "
+                    f"suppressed in the last {_SEND_WINDOW:.0f}s window.",
+                    parse_mode="HTML",
+                    message_thread_id=_thread_id,
+                )
+            except Exception as exc:
+                logging.getLogger().warning(
+                    "Failed to ship error summary to LOG_ERRORS: %s", exc
+                )
+                return
+    if _sent_in_window >= _SEND_BUDGET:
+        _suppressed_in_window += 1
+        return
+    _sent_in_window += 1
     try:
         await _bot.send_message(
             _chat_id,
@@ -415,6 +474,13 @@ async def send_to_log_errors(text: str) -> None:
         logging.getLogger().warning(
             "Failed to ship error to Telegram LOG_ERRORS: %s", exc
         )
+
+
+async def send_to_log_errors(text: str) -> None:
+    """Fire-and-forget send to LOG_ERRORS channel (throttled, see above)."""
+    if not _bot or not _chat_id:
+        return
+    await _ship_throttled(text)
 
 
 async def send_to_owner(text: str) -> None:

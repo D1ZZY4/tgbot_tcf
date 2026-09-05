@@ -311,6 +311,16 @@ async def _execute_ban(bot: Bot, msgs: list[Message], meta: dict[str, Any]) -> N
         len(groups) - failed,
         len(groups),
     )
+    if failed:
+        # * Error-level so the failure ships to LOG_ERRORS automatically;
+        # * per-group warnings above stay console-only.
+        log.error(
+            "Ban fan-out had %d/%d transient failures for target=%d; "
+            "see warnings above and retry manually where needed",
+            failed,
+            len(groups),
+            target_id,
+        )
 
     # * Build the applied-to line, surfacing a clear warning when no group was updated
     total_groups = len(groups)

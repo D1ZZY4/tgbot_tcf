@@ -128,6 +128,14 @@ async def execute_unban(
         ]
     )
     failed = count_transient_errors(results)
+    if failed:
+        log.error(
+            "Unban fan-out had %d/%d transient failures for target=%d; "
+            "user may still be banned in those chats",
+            failed,
+            len(groups),
+            target_id,
+        )
 
     lc, lt = cfg.logs
     # * effective_user can be None for anonymous admins; fall back to target info.

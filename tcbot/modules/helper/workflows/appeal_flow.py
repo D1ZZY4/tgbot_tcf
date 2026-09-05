@@ -36,7 +36,7 @@ from tcbot.database.documents import BanDoc
 from tcbot.modules.helper import parse_logmsg
 from tcbot.modules.helper.formatter import bold, code, esc, mention, pre
 from tcbot.modules.helper.parse_link import message_link
-from tcbot.utils.dispatch import fan_out
+from tcbot.utils.dispatch import count_transient_errors, fan_out
 from tcbot.utils.prefixes import ALL_PREFIXES_CMD_FILTER
 from tcbot.utils.time_and_date import to_utc, utc_now
 
@@ -734,7 +734,7 @@ class BuildAppeal:
             if _pid not in _existing_ids:
                 groups = [*groups, {"chat_id": _pid, "title": ""}]
 
-        await fan_out(
+        unban_results = await fan_out(
             [
                 bot.unban_chat_member(
                     grp.get("chat_id", 0), target_id, only_if_banned=True
@@ -742,6 +742,15 @@ class BuildAppeal:
                 for grp in groups
             ]
         )
+        unban_failed = count_transient_errors(unban_results)
+        if unban_failed:
+            log.error(
+                "Appeal-approve fan-out had %d/%d transient failures for "
+                "target=%d; user may still be banned in those chats",
+                unban_failed,
+                len(groups),
+                target_id,
+            )
 
         appeal_link = ban.get("appeal_link") or ""
         appeal_submitted_at = ban.get("appeal_submitted_at")

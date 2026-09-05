@@ -165,6 +165,13 @@ async def _execute_mute(bot: Bot, update: Update, meta: dict) -> None:
         ]
     )
     failed = count_transient_errors(results)
+    if failed:
+        log.error(
+            "Mute fan-out had %d/%d transient failures for target=%d",
+            failed,
+            len(groups),
+            target_id,
+        )
 
     admin_fname = meta.get("mute_admin_fname", "Admin")
 
@@ -296,6 +303,13 @@ async def execute_unmute(
         ]
     )
     failed = count_transient_errors(results)
+    if failed:
+        log.error(
+            "Unmute fan-out had %d/%d transient failures for target=%d",
+            failed,
+            len(groups),
+            target_id,
+        )
 
     admin = update.effective_user
     if admin is None:
