@@ -269,6 +269,8 @@ class BuildAppeal:
         rejected_at = ban.get("rejected_at")
         if rejected_at is not None:
             elapsed = utc_now() - to_utc(rejected_at)
+            if elapsed < timedelta(0):
+                elapsed = timedelta(0)
             if elapsed < _REJECTION_COOLDOWN:
                 remaining_h = (
                     int(
@@ -399,6 +401,30 @@ class BuildAppeal:
             except Exception as exc:
                 log.debug("Appeal _on_message session-expired reply failed: %s", exc)
             return ConversationHandler.END
+
+        # * Revalidate against a fresh ban record: the ban may have been
+        # * deactivated, or the cached log_message_id may be a transient 0
+        # * from a ban update. Submitting against stale state would orphan
+        # * a review card on an inactive ban.
+        try:
+            fresh_ban = await db.bans_db.get_ban(ban_id)
+        except Exception:
+            log.exception("Appeal _on_message get_ban failed for %s", ban_id)
+            fresh_ban = None
+        if not fresh_ban or not fresh_ban.get("is_active"):
+            try:
+                await msg.reply_text(_ERR_SESSION_EXPIRED)
+            except Exception as exc:
+                log.debug("Appeal _on_message expired-ban reply failed: %s", exc)
+            for key in (
+                "appeal_ban_id",
+                "appeal_log_msg_id",
+                "appeal_instruction_msg_id",
+            ):
+                ctx.user_data.pop(key, None)
+            return ConversationHandler.END
+        if not log_msg_id:
+            log_msg_id = fresh_ban.get("log_message_id", 0)
 
         if log_msg_id and not text_references_log_message(text, log_msg_id):
             try:
@@ -601,6 +627,16 @@ class BuildAppeal:
                 log.debug("Appeal already-resolved edit failed: %s", exc)
             return
 
+        # * A review that is already rejected or has no live review marker
+        # * was decided by a concurrent tap. Acting again would double-DM
+        # * the user, double-edit the card, or unban after a rejection.
+        if ban.get("rejected_at") is not None or not ban.get("review_message_id"):
+            try:
+                await q.edit_message_text(_ERR_ALREADY_RESOLVED, reply_markup=None)
+            except Exception as exc:
+                log.debug("Appeal already-resolved edit failed: %s", exc)
+            return
+
         review_ts = ban.get("review_timestamp")
         if review_ts and reviewer_locked_out(
             review_ts, ban.get("admin_user_id") or 0, admin.id
@@ -684,6 +720,14 @@ class BuildAppeal:
         if isinstance(target_fname, BaseException):
             target_fname = str(target_id)
 
+        # * Clear the review marker now that the ban is inactive. Without
+        # * this a concurrent second decision would still see a live review
+        # * and act again; the resolved-guard above relies on its absence.
+        try:
+            await db.bans_db.clear_review(ban_id)
+        except Exception:
+            log.exception("approve_appeal: clear_review failed for ban %s", ban_id)
+
         _primary_ids = [cid for cid in (cfg.main_group, cfg.exec_group) if cid]
         _existing_ids = {grp.get("chat_id", 0) for grp in groups}
         for _pid in _primary_ids:
@@ -760,6 +804,14 @@ class BuildAppeal:
         # * failed clear_review means the user could re-appeal within the
         # * 72-hour window; a failed set_rejected_by means the audit
         # * trail is incomplete.
+        # * set_rejected_by runs first and alone: the 24 h cooldown depends
+        # * on rejected_at, so it must land even if the review clear fails.
+        try:
+            await db.bans_db.set_rejected_by(ban_id, admin.id, admin.first_name)
+        except Exception:
+            # * Without rejected_at the user may re-appeal immediately; the
+            # * ban itself still stands, so this fails safe toward re-review.
+            log.exception("reject_appeal set_rejected_by failed for ban %s", ban_id)
         results = await asyncio.gather(
             db.users_cache.get_first_name(target_id, str(target_id)),
             bot.send_message(
@@ -774,7 +826,6 @@ class BuildAppeal:
                 reply_markup=None,
             ),
             db.bans_db.clear_review(ban_id),
-            db.bans_db.set_rejected_by(ban_id, admin.id, admin.first_name),
             return_exceptions=True,
         )
         target_fname_result = results[0]
@@ -791,15 +842,6 @@ class BuildAppeal:
                 "re-appeal within the 72-hour window",
                 ban_id,
                 target_id,
-            )
-        if isinstance(results[4], BaseException):
-            # * ``set_rejected_by`` failure is an audit-trail gap: the
-            # * ban record has no rejected_by field, which admin tools
-            # * may rely on. Log loudly so the operator can re-run.
-            log.error(
-                "reject_appeal set_rejected_by failed for ban %s: %s",
-                ban_id,
-                results[4],
             )
         target_fname = (
             target_fname_result
