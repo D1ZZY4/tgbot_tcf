@@ -19,6 +19,7 @@ from tcbot.modules.helper.formatter import bold, code, esc
 from tcbot.modules.helper.identity import ANONYMOUS_BOT_ID
 from tcbot.modules.maintenance import _is_primary_group
 from tcbot.utils.prefixes import build_prefixed_filters, parse_cmd_args
+from tcbot.utils.time_and_date import TELEGRAM_LOOKUP_TIMEOUT
 
 if TYPE_CHECKING:
     from telegram import Update
@@ -33,8 +34,6 @@ _MSG_PRIMARY_REFUSED = (
     "be disconnected. The bot is required in primary groups for ban / unban "
     "/ mute / warn fan-out and the federation log channel."
 )
-
-_TG_TIMEOUT = 3.0
 
 # ─────────────────────── Rate-limiter constants ──────────────────── #
 _RL_PERIOD_S: int = 60
@@ -130,7 +129,7 @@ async def cmd_tcdisconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         db.groups_db.is_connected(chat.id),
         db.users_roles.is_staff(user.id),
         asyncio.wait_for(
-            ctx.bot.get_chat_member(chat.id, user.id), timeout=_TG_TIMEOUT
+            ctx.bot.get_chat_member(chat.id, user.id), timeout=TELEGRAM_LOOKUP_TIMEOUT
         ),
         return_exceptions=True,
     )

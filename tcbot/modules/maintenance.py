@@ -92,10 +92,12 @@ __help__: replies.HelpEntry = {
 # * federation log channel. They must not be torn down by leaveall / cleanup
 # * / disconnect / rmtc paths. Centralised here so all four call sites agree.
 def _is_primary_group(chat_id: int | None) -> bool:
-    """Return True if the chat is the main or exec group (never disconnect)."""
-    if chat_id is None or chat_id <= 0:
-        return False
-    return chat_id in (cfg.main_group, cfg.exec_group)
+    """Return True if the chat is the main or exec group (never disconnect).
+
+    Thin alias over :meth:`cfg.is_primary_group`, kept so existing import
+    sites keep working. New code should call ``cfg.is_primary_group``.
+    """
+    return cfg.is_primary_group(chat_id)
 
 
 @dataclass(frozen=True)

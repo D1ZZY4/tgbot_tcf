@@ -196,7 +196,7 @@ async def on_new_member(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     assert msg is not None
     assert chat is not None
 
-    is_primary = chat.id in (cfg.main_group, cfg.exec_group)
+    is_primary = cfg.is_primary_group(chat.id)
 
     if not is_primary:
         # * Only act in connected federation groups; skip all other chats.
@@ -249,7 +249,7 @@ async def on_join_request_approved(
         return
 
     chat = cmu.chat
-    is_primary = chat.id in (cfg.main_group, cfg.exec_group)
+    is_primary = cfg.is_primary_group(chat.id)
     if not is_primary:
         try:
             connected = await db.groups_db.is_connected(chat.id)
@@ -347,7 +347,7 @@ async def on_join_request(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
         return
 
     chat = request.chat
-    is_primary = chat.id in (cfg.main_group, cfg.exec_group)
+    is_primary = cfg.is_primary_group(chat.id)
 
     if not is_primary:
         try:
@@ -407,7 +407,7 @@ async def on_left_member(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
     assert msg is not None
     assert chat is not None
 
-    if chat.id not in (cfg.main_group, cfg.exec_group):
+    if not cfg.is_primary_group(chat.id):
         return
 
     member = msg.left_chat_member

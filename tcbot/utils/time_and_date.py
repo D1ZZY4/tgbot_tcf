@@ -52,6 +52,11 @@ def from_timestamp(ts: float) -> datetime:
 # ──────────────────────── Measurement Helpers ──────────────────────── #
 
 
+# * Standard budget for a single Telegram lookup (get_chat, get_chat_member).
+# * Previously triplicated as ``_TG_TIMEOUT`` across group-flow modules.
+TELEGRAM_LOOKUP_TIMEOUT: float = 3.0
+
+
 def monotonic() -> float:
     """Return the monotonic clock in seconds, for measuring durations."""
     return time.monotonic()

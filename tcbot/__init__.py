@@ -406,6 +406,17 @@ class _CfgAdapter:
         """Staff/exec group chat ID, or 0 when unset."""
         return self._c.extend_group_id
 
+    def is_primary_group(self, chat_id: int | None) -> bool:
+        """Return True for the main/exec groups (never disconnect).
+
+        Single source of truth for primary-group membership; every guard
+        across connect, disconnect, maintenance, greeting, and workflow
+        modules must use this instead of inline tuple checks.
+        """
+        if chat_id is None or chat_id <= 0:
+            return False
+        return chat_id in (self.main_group, self.exec_group)
+
     @property
     def logs(self) -> tuple[int, int | None]:
         """Moderation log destination as (chat_id, thread_id)."""

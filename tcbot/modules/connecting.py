@@ -24,6 +24,7 @@ from tcbot.modules.helper.formatter import bold, code, esc
 from tcbot.modules.helper.workflows.connected_flow import connection
 from tcbot.modules.maintenance import _is_primary_group
 from tcbot.utils.prefixes import build_prefixed_filters
+from tcbot.utils.time_and_date import TELEGRAM_LOOKUP_TIMEOUT
 
 if TYPE_CHECKING:
     from telegram import Update
@@ -34,8 +35,6 @@ log = logging.getLogger(__name__)
 
 _ERR_ADMIN_REQUIRED = "Only group admins can request to connect."
 _ERR_PENDING_REQUEST = "A connect request for this group is already pending."
-
-_TG_TIMEOUT = 3.0
 
 # ─────────────────────── Rate-limiter constants ──────────────────── #
 _RL_PERIOD_S: int = 60
@@ -123,12 +122,13 @@ async def cmd_tcconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     # * extra Telegram round-trip is needed after the early-exit checks.
     member, is_connected, pending, bot_member = await asyncio.gather(
         asyncio.wait_for(
-            ctx.bot.get_chat_member(chat.id, user.id), timeout=_TG_TIMEOUT
+            ctx.bot.get_chat_member(chat.id, user.id), timeout=TELEGRAM_LOOKUP_TIMEOUT
         ),
         db.groups_db.is_connected(chat.id),
         db.groups_db.get_pending(chat.id),
         asyncio.wait_for(
-            ctx.bot.get_chat_member(chat.id, ctx.bot.id), timeout=_TG_TIMEOUT
+            ctx.bot.get_chat_member(chat.id, ctx.bot.id),
+            timeout=TELEGRAM_LOOKUP_TIMEOUT,
         ),
         return_exceptions=True,
     )

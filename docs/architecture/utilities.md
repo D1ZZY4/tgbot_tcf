@@ -139,6 +139,7 @@ handling plus monotonic measurement.
 | `from_timestamp(ts)` | Convert a POSIX timestamp (e.g. log record time) to aware UTC. |
 | `monotonic()` | Monotonic clock in seconds, for measuring durations. |
 | `elapsed_ms(start)` | Milliseconds since a `monotonic()` reading. |
+| `TELEGRAM_LOOKUP_TIMEOUT` | Standard 3s budget for single Telegram lookups. |
 
 Do not call `datetime.utcnow()` or `datetime.now(timezone.utc)` outside this utility. Do not read `time.monotonic()` directly; use the helpers above. The only exception is Redis rate limiting, which needs wall-clock `time.time()` scores shared across processes.
 

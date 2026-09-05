@@ -27,6 +27,7 @@ from tcbot import database as db
 from tcbot.modules.helper import parse_logmsg
 from tcbot.modules.helper.formatter import bold, code
 from tcbot.utils.dispatch import count_transient_errors, fan_out
+from tcbot.utils.time_and_date import TELEGRAM_LOOKUP_TIMEOUT
 
 if TYPE_CHECKING:
     from telegram.ext import ContextTypes
@@ -95,8 +96,6 @@ _ERR_BOT_PERMS_VERIFY = (
 _ERR_COMPLETE_JOIN = (
     "Connection failed due to a database error. Please try again later."
 )
-
-_TG_TIMEOUT = 3.0
 
 _REQUIRED_PERMS: tuple[str, ...] = (
     "can_delete_messages",
@@ -188,10 +187,12 @@ class BuildConnection:
             add_group_r,
             _remove_pending_r,
         ) = await asyncio.gather(
-            asyncio.wait_for(bot.get_chat(chat_id), timeout=_TG_TIMEOUT),
+            asyncio.wait_for(bot.get_chat(chat_id), timeout=TELEGRAM_LOOKUP_TIMEOUT),
             db.bans_db.active_ban_user_ids(),
             db.mutes_db.active_mute_docs(),
-            asyncio.wait_for(bot.get_chat_administrators(chat_id), timeout=_TG_TIMEOUT),
+            asyncio.wait_for(
+                bot.get_chat_administrators(chat_id), timeout=TELEGRAM_LOOKUP_TIMEOUT
+            ),
             db.groups_db.add_group(chat_id, chat_title, owner_id),
             db.groups_db.remove_pending(chat_id),
             return_exceptions=True,
@@ -331,7 +332,7 @@ class BuildConnection:
             new_status in (ChatMemberStatus.MEMBER, ChatMemberStatus.RESTRICTED)
             and old_status == ChatMemberStatus.ADMINISTRATOR
         ):
-            if chat.id not in (cfg.main_group, cfg.exec_group):
+            if not cfg.is_primary_group(chat.id):
                 warning_text = (
                     f"Bot was demoted in group"
                     f" {bold(chat.title or str(chat.id))}"
@@ -358,7 +359,7 @@ class BuildConnection:
             # * Primary groups must never enter the federation join flow: no
             # * prompt, no pending row. They are required enforcement
             # * destinations, not connectable members.
-            if chat.id in (cfg.main_group, cfg.exec_group):
+            if cfg.is_primary_group(chat.id):
                 return
             # * Speculatively pre-fetch both reads in parallel; is_already_connected
             # * is only consumed if the pending+ADMINISTRATOR fast path is not taken.
@@ -454,7 +455,8 @@ class BuildConnection:
         # * disappears immediately regardless of Telegram API latency.
         member_res, _ = await asyncio.gather(
             asyncio.wait_for(
-                ctx.bot.get_chat_member(chat.id, user.id), timeout=_TG_TIMEOUT
+                ctx.bot.get_chat_member(chat.id, user.id),
+                timeout=TELEGRAM_LOOKUP_TIMEOUT,
             ),
             q.answer(),
             return_exceptions=True,
@@ -480,7 +482,8 @@ class BuildConnection:
         if action == self.join_callback:
             try:
                 bot_member = await asyncio.wait_for(
-                    ctx.bot.get_chat_member(chat.id, ctx.bot.id), timeout=_TG_TIMEOUT
+                    ctx.bot.get_chat_member(chat.id, ctx.bot.id),
+                    timeout=TELEGRAM_LOOKUP_TIMEOUT,
                 )
             except Exception as exc:
                 log.debug("Join decision permission check failed: %s", exc)

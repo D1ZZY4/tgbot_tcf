@@ -27,6 +27,8 @@ commands live in [`tooling-validation.md`](tooling-validation.md).
   failed lookup as a user with no role.
 - Preserve `asyncio.CancelledError` in role lookups; re-raise instead of
   converting it into a role result.
+- Guard primary groups with `cfg.is_primary_group()`; never inline the
+  main/exec tuple check.
 
 ## Secrets and Credentials
 
