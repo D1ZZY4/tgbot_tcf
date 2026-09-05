@@ -84,18 +84,24 @@ failure behavior.
 
 ## Todo and Plan Discipline
 
-Work is tracked with a todo list, never with memory or good intentions:
+Work is tracked with a todo list, never with memory or good intentions.
+Diligence here is mandatory, not optional:
 
 - Create a todo list for any task with 3 or more steps; update it in real
-  time as work proceeds.
+  time as work proceeds. Never leave the list stale and never ignore it.
 - Exactly one item is `in_progress` at any moment.
-- Mark an item `completed` only after its work is actually done, including
-  its verification. Never mark complete on intent, and never batch several
-  completions into one update.
+- Mark an item `completed` the moment its work is actually done, including
+  its verification — diligently, every time, without being reminded.
+  Never mark complete on intent, and never batch several completions into
+  one update.
+- After completing an item, immediately continue to the next pending item.
+  Do not stall, do not end the turn with work left unstarted.
 - New instructions arriving mid-task become new todos first, then work.
 - If blocked or partial, keep the item `in_progress` and add a follow-up
   todo describing the blocker.
 - Do not start the next item while the current one is unverified.
+- Never silently drop an item: cancel explicitly with a stated reason
+  instead of abandoning it.
 
 ## Pre-Edit Checklist
 
