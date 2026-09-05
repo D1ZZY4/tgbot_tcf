@@ -642,7 +642,15 @@ async def cmd_transfer(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     args = parse_cmd_args(msg.text)
-    target_id, target_fname = await extraction.extract_target(update, args, ctx.bot)
+    try:
+        target_id, target_fname = await extraction.extract_target(update, args, ctx.bot)
+    except Exception:
+        log.exception("extract_target failed during transfer")
+        try:
+            await msg.reply_text(replies.ERR_ROLE_VERIFY)
+        except Exception as reply_exc:
+            log.debug("cmd_transfer extract-failed reply failed: %s", reply_exc)
+        return
     if not target_id:
         try:
             await msg.reply_text(replies.ERR_CANNOT_RESOLVE)
@@ -650,7 +658,17 @@ async def cmd_transfer(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             log.debug("cmd_transfer no-target reply failed: %s", exc)
         return
 
-    ident = await identity.classify(ctx.bot, current_owner.id, target_id, target_fname)
+    try:
+        ident = await identity.classify(
+            ctx.bot, current_owner.id, target_id, target_fname
+        )
+    except Exception:
+        log.exception("identity.classify failed during transfer")
+        try:
+            await msg.reply_text(replies.ERR_ROLE_VERIFY)
+        except Exception as reply_exc:
+            log.debug("cmd_transfer classify-failed reply failed: %s", reply_exc)
+        return
     refusal = identity.refuse_message("transfer", ident)
     if refusal is not None:
         try:
@@ -699,7 +717,18 @@ async def cmd_transfer(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     # * set_owner first: it is atomic (upsert + delete_many). If it fails, the
     # * old founder is untouched. add_admin is non-fatal and runs second so a
     # * transient failure there does not leave the federation ownerless.
-    await db.users_roles.set_owner(target_id)
+    try:
+        await db.users_roles.set_owner(target_id)
+    except Exception:
+        log.exception("cmd_transfer set_owner failed for target %d", target_id)
+        try:
+            await msg.reply_text(
+                "Couldn't transfer ownership due to a server error. "
+                "No changes were made; please try again."
+            )
+        except Exception as exc:
+            log.debug("cmd_transfer set-owner-failed reply failed: %s", exc)
+        return
     # * Refresh the in-process error_reporter owner so subsequent infra
     # * errors go to the new owner via DM instead of the old one.
     error_reporter.set_owner(target_id)
@@ -890,13 +919,22 @@ async def on_promo_decision(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
             log.debug("on_promo_decision not-found edit failed: %s", exc)
         return
     req = req_result
+    # * A concurrent tap may have resolved the request after our fetch.
+    # * resolve() below is atomic (pending-only filter), but refuse early
+    # * so a stale card never shows a second success message.
+    if req.get("status") != "pending":
+        try:
+            await q.edit_message_text(_ERR_REQUEST_NOT_FOUND, reply_markup=None)
+        except Exception as exc:
+            log.debug("on_promo_decision resolved edit failed: %s", exc)
+        return
     target_id = req.get("target_id", 0)
     target_fname = req.get("first_name", str(target_id))
     lc, lt = cfg.logs
 
     if action == "promo_approve":
-        # * DB writes in parallel; check results - if add_admin fails the user is
-        # * approved in the queue but never actually gains the role.
+        # * DB writes in parallel; the atomic resolve decides the winner.
+        # * A lost race (or any write failure) must not show "Approved".
         db_add_r, db_resolve_r = await asyncio.gather(
             db.users_roles.add_admin(target_id, admin.id),
             db.queues_db.resolve(request_id, "approved", admin.id),
@@ -913,6 +951,20 @@ async def on_promo_decision(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
             log.error(
                 "resolve(approved) failed for request %s: %s", request_id, db_resolve_r
             )
+        if (
+            isinstance(db_add_r, BaseException)
+            or isinstance(db_resolve_r, BaseException)
+            or db_resolve_r is False
+        ):
+            try:
+                await q.edit_message_text(
+                    "Couldn't approve the request due to a server error. "
+                    "Please try again.",
+                    reply_markup=None,
+                )
+            except Exception as exc:
+                log.debug("promo_approve db-fail edit failed: %s", exc)
+            return
         log_text = parse_logmsg.promote_approved_log(
             target_id,
             target_fname,
@@ -943,6 +995,24 @@ async def on_promo_decision(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
                 log.debug("promo_approve notify[%d] failed: %s", i, r)
 
     elif action == "promo_reject":
+        # * Resolve first and atomically: only the winner may mutate the UI.
+        # * A lost race (or write failure) shows an error instead of a
+        # * "Rejected" card over a still-pending request.
+        try:
+            resolved = await db.queues_db.resolve(request_id, "rejected", admin.id)
+        except Exception:
+            log.exception("resolve(rejected) failed for request %s", request_id)
+            resolved = False
+        if not resolved:
+            try:
+                await q.edit_message_text(
+                    "Couldn't reject the request due to a server error. "
+                    "Please try again.",
+                    reply_markup=None,
+                )
+            except Exception as exc:
+                log.debug("promo_reject db-fail edit failed: %s", exc)
+            return
         log_text = parse_logmsg.promote_rejected_log(
             target_id,
             target_fname,
@@ -950,9 +1020,8 @@ async def on_promo_decision(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
             admin.first_name,
             request_id,
         )
-        # * resolve DB + notify + send log + edit review message all in parallel
-        # * check results - if resolve fails the request stays pending while the UI
-        # * already shows "Rejected", which would leave the queue in an inconsistent state.
+        # * Notify + send log + edit review message in parallel; all are
+        # * best-effort now that the queue state is final.
         existing_text = ""
         if q.message is not None:
             existing_text = getattr(q.message, "text_html", "") or ""
@@ -962,7 +1031,6 @@ async def on_promo_decision(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
                 parse_mode="HTML",
                 reply_markup=None,
             ),
-            db.queues_db.resolve(request_id, "rejected", admin.id),
             ctx.bot.send_message(
                 target_id,
                 "Your request was reviewed but wasn't approved this time. You're free to apply again later.",
@@ -970,14 +1038,8 @@ async def on_promo_decision(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
             ctx.bot.send_message(lc, log_text, parse_mode="HTML", message_thread_id=lt),
             return_exceptions=True,
         )
-        if isinstance(reject_results[1], BaseException):
-            log.error(
-                "resolve(rejected) failed for request %s: %s",
-                request_id,
-                reject_results[1],
-            )
         for i, r in enumerate(reject_results):
-            if i != 1 and isinstance(r, BaseException):
+            if isinstance(r, BaseException):
                 log.debug("promo_reject notify[%d] failed: %s", i, r)
 
 

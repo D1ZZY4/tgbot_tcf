@@ -225,9 +225,50 @@ async def execute_unwarn(
         chat_id,
         chat_title,
     )
-    # * remove warn + send log + reply in parallel
+    # * Remove first, then report what actually happened. Logging the
+    # * computed new_count before the delete lands lies on concurrent
+    # * unwarns: a second racing unwarn finds nothing to delete but the
+    # * reply was already sent claiming success.
+    try:
+        removed = await db.warns_db.remove_last_warn(target_id, chat_id)
+    except Exception:
+        log.exception(
+            "remove_last_warn DB write failed for target=%d chat=%d",
+            target_id,
+            chat_id,
+        )
+        removed = False
+    if not removed:
+        try:
+            await msg.reply_text(
+                f"{user_ref(target_id, target_name)} has no warnings in this group.",
+                parse_mode="HTML",
+            )
+        except Exception as exc:
+            log.debug("execute_unwarn empty reply failed: %s", exc)
+        return
+    # * Re-read the count after the delete so concurrent unwarns report
+    # * the true remaining total instead of a stale computed value.
+    try:
+        new_count = await db.warns_db.warn_count(target_id, chat_id)
+    except Exception:
+        log.exception(
+            "warn_count re-read failed for target=%d chat=%d",
+            target_id,
+            chat_id,
+        )
+        new_count = max(count - 1, 0)
+    log_text = parse_logmsg.unwarn_log(
+        target_id,
+        target_name,
+        admin.id,
+        admin.first_name,
+        new_count,
+        cfg.warn_limit,
+        chat_id,
+        chat_title,
+    )
     results = await asyncio.gather(
-        db.warns_db.remove_last_warn(target_id, chat_id),
         ctx.bot.send_message(lc, log_text, parse_mode="HTML", message_thread_id=lt),
         msg.reply_text(
             f"One warning removed from {user_ref(target_id, target_name)}. "
@@ -237,14 +278,7 @@ async def execute_unwarn(
         return_exceptions=True,
     )
     if isinstance(results[0], BaseException):
-        log.error(
-            "remove_last_warn DB write failed for target=%d chat=%d: %s",
-            target_id,
-            chat_id,
-            results[0],
-        )
-    if isinstance(results[1], BaseException):
-        log.error("Unwarn log send failed: %s", results[1])
+        log.error("Unwarn log send failed: %s", results[0])
 
 
 async def execute_warnlist(
