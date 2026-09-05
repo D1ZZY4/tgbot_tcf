@@ -6,6 +6,7 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Changed
 
+- **Todo diligence wording** (`.agents/rules/tooling-validation.md`): hardened the Todo and Plan Discipline section — diligence mandatory, mark complete immediately with verification, continue to the next item at once, never stale or ignored, never silently dropped.
 - **Guidance sync for handoff** (`AGENTS.md`, `CONTRIBUTING.md`, `PROMPT.md`, `.agents/skills/`): `AGENTS.md` skill policy now mandates loading all matching skills with full-instruction reads; stack notes corrected (tagged-JSON Redis serialization, `.env` fallback, scoped commit prefixes). `CONTRIBUTING.md` rewritten explicitly for humans (agent contract stays in `AGENTS.md` + rules); fixed the Replit-only qualifier and the `pyright` scope. `PROMPT.md` gains the skill-loading mandate. Tracked skills refreshed: `feature-reviewer` workflow list and read header corrected, `mongodb-query-optimizer` index table synchronized with `ensure_indexes()`.
 - **Docs skill converted to rules** (`.agents/rules/docs-rules.md`): converted the `docs-maintainer` skill into a canonical rules file formatted like `code-style.md` (title, scope, style, workflow, detailed-guide sections; later renamed to `docs-rules.md`). Removed `.agents/skills/docs-maintainer/SKILL.md` and its `skills-lock.json` entry. Updated `AGENTS.md`, `CONTRIBUTING.md`, and `tooling-validation.md` references. No behavior change.
 
