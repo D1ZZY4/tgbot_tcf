@@ -168,11 +168,12 @@ async def execute_kick(
             )
         except Exception as exc:
             log.debug("Kick reply_text failed: %s", exc)
-    except Exception as exc:
+    except Exception:
         log.exception("Kick failed for %s in %s", target_id, chat_id)
         try:
             await msg.reply_text(
-                f"Couldn't kick {mention(target_id, target_name)}: {esc(str(exc))}",
+                f"Couldn't kick {mention(target_id, target_name)}. "
+                "Please check bot permissions and retry.",
                 parse_mode="HTML",
             )
         except Exception as reply_exc:
