@@ -139,24 +139,23 @@ uv sync --frozen
 Format source files:
 
 ```bash
-ruff format .
+uv run ruff format .
 ```
 
 Apply safe lint fixes:
 
 ```bash
-ruff check --fix .
+uv run ruff check --fix .
 ```
 
 Check without modifying files:
 
 ```bash
-ruff format --check .
-ruff check .
+uv run ruff format --check .
+uv run ruff check .
 ```
 
-Replit note: if `ruff` is not on PATH, use `uv run ruff` instead. The
-invocations above are the project's primary bare commands.
+The `uv run` prefix is primary so no venv activation is needed.
 
 Common diagnostics:
 
@@ -176,7 +175,7 @@ Recommended minimum validation by change type:
 | Change type | Minimum validation |
 |---|---|
 | Documentation-only | Read changed docs, scan links and stale paths, then run `git diff --check`. |
-| Formatter or comment-only code change | `ruff format --check .` and `ruff check .` |
+| Formatter or comment-only code change | `uv run ruff format --check .` and `uv run ruff check .` |
 | Command handler change | Ruff checks, then start the bot and inspect startup logs. |
 | Database helper change | Ruff checks and an import check of the changed module. |
 | Workflow change | Ruff checks and an import check of the changed flow. |
@@ -186,11 +185,11 @@ Recommended minimum validation by change type:
 For the full runtime check:
 
 ```bash
-ruff format --check .
-ruff check .
-pyright .
-python -m compileall -q tcbot
-python -c "import tcbot"
+uv run ruff format --check .
+uv run ruff check .
+uv run --with pyright pyright .
+uv run python -m compileall -q tcbot
+uv run python -c "import tcbot"
 git diff --check
 ```
 

@@ -54,7 +54,7 @@ See [Configuration](#configuration) below and `config.env.example` for the compl
 ### 3. Run the bot
 
 ```bash
-python -m tcbot
+uv run python -m tcbot
 ```
 
 ## Docker Compose
@@ -74,7 +74,7 @@ Use Replit Secrets or the hosting platform's secret manager for credentials. Do 
 Recommended run command:
 
 ```bash
-python -m tcbot
+uv run python -m tcbot
 ```
 
 The Flask keep-alive server binds to `0.0.0.0:${PORT}`. If `PORT` is unset, invalid, or outside `1..65535`, the application defaults to `5000`.
@@ -177,9 +177,9 @@ For detailed architecture, see [`docs/architecture/repository-map.md`](docs/arch
 ## Code Quality
 
 ```bash
-ruff format .
-ruff check --fix .
-pyright tcbot/
+uv run ruff format .
+uv run ruff check --fix .
+uv run --with pyright pyright tcbot/
 ```
 
 Ruff targets Python 3.14 and line length 88. GitHub Actions install dependencies through `uv sync --frozen` so CI follows `pyproject.toml` and `uv.lock`. Project code should follow the detailed rules in [tooling and validation](.agents/rules/tooling-validation.md), [code style and architecture](.agents/rules/code-style.md), and [comment and documentation style](.agents/rules/comment-style.md).

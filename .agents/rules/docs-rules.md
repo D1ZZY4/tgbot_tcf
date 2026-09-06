@@ -94,9 +94,9 @@ Recent project additions to keep accurate when editing docs:
 Core commands:
 
 ```bash
-ruff check .
-ruff format .
-python -m tcbot
+uv run ruff check .
+uv run ruff format .
+uv run python -m tcbot
 ```
 
 ## Update Workflow
