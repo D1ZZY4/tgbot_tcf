@@ -141,7 +141,19 @@ async def _execute_mute(bot: Bot, update: Update, meta: dict) -> None:
     # * live DB would both report them as staff. Demote again here to
     # * preserve the role-vs-state invariant right up to the restrict
     # * fan-out. Best-effort like the entry-point demote.
-    pre_fanout_role = await db.users_roles.get_effective_role(target_id)
+    # * The lookup itself is guarded too: entry authorization already
+    # * fail-closed, and this re-check is defense-in-depth, so a transient
+    # * lookup failure logs loudly and proceeds as non-staff instead of
+    # * aborting an authorized mute with no reply.
+    try:
+        pre_fanout_role = await db.users_roles.get_effective_role(target_id)
+    except Exception:
+        log.exception(
+            "_execute_mute: pre-fanout role lookup failed for target %d; "
+            "proceeding with mute anyway",
+            target_id,
+        )
+        pre_fanout_role = None
     if pre_fanout_role:
         try:
             await Demote.execute(

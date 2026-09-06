@@ -253,7 +253,20 @@ async def _execute_ban(bot: Bot, msgs: list[Message], meta: dict[str, Any]) -> N
     # * like the entry-point demote: a failure logs and the ban still
     # * proceeds because the user IS already banned in the DB; the chat
     # * enforcement is the side-effect.
-    pre_fanout_role = await db.users_roles.get_effective_role(target_id)
+    # * The lookup itself is guarded too: the ban record above is already
+    # * written, so letting a transient role-lookup failure propagate would
+    # * skip the fan-out and leave a DB-banned but chat-unenforced split
+    # * brain. Entry authorization already fail-closed; this re-check is
+    # * defense-in-depth, so proceed as non-staff with a loud log instead.
+    try:
+        pre_fanout_role = await db.users_roles.get_effective_role(target_id)
+    except Exception:
+        log.exception(
+            "_execute_ban: pre-fanout role lookup failed for target %d; "
+            "proceeding with ban anyway",
+            target_id,
+        )
+        pre_fanout_role = None
     if pre_fanout_role:
         try:
             await Demote.execute(

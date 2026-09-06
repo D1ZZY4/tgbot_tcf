@@ -66,8 +66,10 @@ async def execute_warn(
        configured value, even if no single group has hit its per-group limit.
        This closes the evasion path of spreading thin warns across many groups.
 
-    In both cases any held federation role is demoted first, then the user is
-    banned from all active federation groups.  When ``cfg.fed_warn_limit`` is 0
+    In both cases a non-staff user is banned from all active federation
+    groups. A target holding a federation role is demoted first and then
+    exempted from the auto-ban (staff are never auto-banned via warnings);
+    the warn itself is still recorded. When ``cfg.fed_warn_limit`` is 0
     only the per-group threshold applies (backward-compatible default).
     """
     msg = update.effective_message
@@ -407,7 +409,19 @@ async def _execute_warn_auto_ban(
     log_text: str,
 ) -> None:
     """Handle warn-threshold auto-ban: staff demotion, DB record, fan-out, reply."""
-    target_role = await db.users_roles.get_effective_role(target_id)
+    # * The role lookup is guarded: the warn above is already recorded and the
+    # * per-group trigger fires on exact equality, so letting a transient
+    # * lookup failure propagate would both skip this threshold's auto-ban and
+    # * wedge the retry (count is now limit+1, which never re-fires). Entry
+    # * authorization already fail-closed; proceed as non-staff with a loud log.
+    try:
+        target_role = await db.users_roles.get_effective_role(target_id)
+    except Exception:
+        log.exception(
+            "Warn auto-ban role lookup failed for target=%d; proceeding as non-staff",
+            target_id,
+        )
+        target_role = None
     if target_role:
         demoted = True
         try:

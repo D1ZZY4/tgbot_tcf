@@ -102,7 +102,20 @@ async def execute_kick(
         # * role cache and the live DB would both report them as staff.
         # * Demote again here to preserve the role-vs-state invariant right
         # * up to the kick fan-out. Best-effort like the entry-point demote.
-        pre_fanout_role = await db.users_roles.get_effective_role(target_id)
+        # * The lookup itself is guarded too: ban_chat_member above already
+        # * ran, so letting a transient role-lookup failure propagate would
+        # * skip the unban and turn this kick into a ban with a misleading
+        # * error reply. Entry authorization already fail-closed; this
+        # * re-check is defense-in-depth, so proceed as non-staff instead.
+        try:
+            pre_fanout_role = await db.users_roles.get_effective_role(target_id)
+        except Exception:
+            log.exception(
+                "execute_kick: pre-fanout role lookup failed for target %d; "
+                "proceeding with kick anyway",
+                target_id,
+            )
+            pre_fanout_role = None
         if pre_fanout_role:
             try:
                 await Demote.execute(
