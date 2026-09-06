@@ -147,6 +147,33 @@ _DEDUPE_WINDOW = 30.0
 _RECENT_MAX: int = 1000
 _recent: dict[tuple, float] = {}
 
+# ── Owner-DM repeat suppression ── #
+# * Owner-only errors (a duplicate instance's Conflict storm, a revoked
+# * token) repeat identically forever; the 30 s dedupe above only spaces
+# * them to one DM per 30 s with no backstop. Past a small hourly budget
+# * per fingerprint the owner already knows, so suppress further repeats.
+_OWNER_WINDOW: float = 3600.0
+_OWNER_BUDGET: int = 3
+_OWNER_MAX: int = 1000
+_owner_sent: dict[tuple, tuple[float, int]] = {}
+
+
+def _owner_suppressed(fp: tuple) -> bool:
+    """Return True when this owner fingerprint exhausted its hourly budget."""
+    now = monotonic()
+    if len(_owner_sent) >= _OWNER_MAX:
+        for k in [k for k, (s, _) in _owner_sent.items() if now - s >= _OWNER_WINDOW]:
+            del _owner_sent[k]
+    start, count = _owner_sent.get(fp, (now, 0))
+    if now - start >= _OWNER_WINDOW:
+        start, count = now, 0
+    if count >= _OWNER_BUDGET:
+        _owner_sent[fp] = (start, count)
+        return True
+    _owner_sent[fp] = (start, count + 1)
+    return False
+
+
 # * Maximum characters captured from an exception or log message in a fingerprint.
 _MAX_CONTEXT_LEN: int = 120
 
@@ -346,7 +373,9 @@ def _location(
 
 
 _TOKEN_RE = re.compile(r"\b\d{6,}:[A-Za-z0-9_-]{20,}\b")
-_MONGO_AUTH_RE = re.compile(r"://[^:@/\s]+:[^@/\s]+@")
+# * The user part is optional so password-only authorities (redis://:pass@host)
+# * redact too; a bare host without credentials never matches (nothing to hide).
+_MONGO_AUTH_RE = re.compile(r"://(?:[^:@/\s]+)?:[^@/\s]+@")
 
 
 def _scrub_secrets(text: str) -> str:
@@ -354,11 +383,17 @@ def _scrub_secrets(text: str) -> str:
 
     Mongo auth/network errors can echo connection strings, and any bug that
     interpolates config may leak the bot token. Redaction is pattern-based
-    (bot ``id:hash`` shape, URI ``user:pass@`` authority), so legitimate
-    surrounding text is preserved.
+    (bot ``id:hash`` shape, URI ``[user]:pass@`` authority with optional user,
+    so ``redis://:pass@host`` is covered), so legitimate surrounding text is
+    preserved.
     """
     text = _TOKEN_RE.sub("[REDACTED_TOKEN]", text)
     return _MONGO_AUTH_RE.sub("://[REDACTED]@", text)
+
+
+def scrub_text(text: str) -> str:
+    """Public wrapper for secret redaction of console-bound strings."""
+    return _scrub_secrets(text)
 
 
 def build_error_message(
@@ -515,6 +550,9 @@ async def report_exc(
         return
     text = build_error_message(exc=exc, context=context)
     if _owner_only(exc):
+        if _owner_suppressed(_fingerprint_exc(exc)):
+            logging.getLogger().debug("Owner DM suppressed: hourly budget spent.")
+            return
         await send_to_owner(text)
     else:
         await send_to_log_errors(text)
@@ -533,6 +571,10 @@ async def report_record(record: logging.LogRecord) -> None:
         return
     text = build_error_message(record=record)
     if _owner_only(exc):
+        fp = _fingerprint_exc(exc) if exc is not None else _fingerprint_record(record)
+        if _owner_suppressed(fp):
+            logging.getLogger().debug("Owner DM suppressed: hourly budget spent.")
+            return
         await send_to_owner(text)
     else:
         await send_to_log_errors(text)

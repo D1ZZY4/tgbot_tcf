@@ -168,12 +168,21 @@ async def _error_handler(update: object, ctx: ContextTypes.DEFAULT_TYPE) -> None
         elif update.callback_query:
             context_parts.append(f"CBQ data: {update.callback_query.data}")
 
-    context_str = " | ".join(context_parts) if context_parts else None
+    # * Scrub before logging: message excerpts can carry user-pasted secrets
+    # * into persistent console logs. The shipped report path scrubs again
+    # * (idempotent markers), so this only hardens the console copy.
+    context_str = (
+        error_reporter.scrub_text(" | ".join(context_parts)) if context_parts else None
+    )
 
-    # * Log to console as well (existing behaviour), including context when available
+    # * Log to console as well (existing behaviour), including context when available.
+    # * Only the numeric update ID is logged, never the raw Update repr: message
+    # * text can carry user-pasted secrets into persistent console logs, while
+    # * the shipped report path is scrubbed separately by the error reporter.
+    update_id = update.update_id if isinstance(update, Update) else "?"
     log.error(
         "Unhandled exception for update %s%s",
-        update,
+        update_id,
         f" | {context_str}" if context_str else "",
         exc_info=exc,
     )
