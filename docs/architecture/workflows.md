@@ -150,12 +150,13 @@ flowchart TD
     Proof -->|photo/video| Exec[_execute_mute]
     Proof -->|skip| Exec
     Proof -->|cancel| End
-    Exec -->|fan_out restrict to all groups| Groups[Active connected groups]
-    Exec -->|upload proof if any| ProofChat[Proof channel/chat]
-    Exec -->|post audit log| LogChat[Log channel]
-    Exec -->|upsert active_mutes record| ActiveMutes[active_mutes collection]
-    ActiveMutes -->|re-applied on join| Join[greeting._handle_member]
-    ActiveMutes -->|re-applied on group connect| Connect[connected_flow.complete_join]
+    Exec -->|persist record first, abort on DB failure| Stored[log_mute + set_active_mute]
+    Stored -->|fan_out restrict to all groups| Groups[Active connected groups]
+    Groups -->|upload proof if any| ProofChat[Proof channel/chat]
+    Groups -->|post audit log| LogChat[Log channel]
+    Groups -->|edit prompt summary| Summary[Moderator summary]
+    Stored -->|re-applied on join| Join[greeting._handle_member]
+    Stored -->|re-applied on group connect| Connect[connected_flow.complete_join]
     Exec --> End
 ```
 
@@ -168,7 +169,7 @@ flowchart TD
 | Limit | `cfg.warn_limit` (env var `WARN_LIMIT`, default 3, minimum 1) |
 | Executors | `execute_warn(update, ctx, target_id, target_name, reason_text, proof_desc=None, proof_msgs=None)`, `execute_unwarn`, `execute_warnlist`, `execute_resetwarns` |
 
-Warns are tracked per `(user_id, chat_id)`. At `cfg.warn_limit` (per-group) or `cfg.fed_warn_limit` (federation-wide), the flow issues a **federation-wide ban** via `fan_out()` to all active connected groups plus primary groups, creates a ban document in the `bans` collection, and then clears warnings for that user/chat. If `proof_msgs` is provided, proof media is uploaded to the proof channel and the resulting link is attached as an inline keyboard button to all outgoing messages (auto-ban log, replies, non-auto-ban log).
+Warns are tracked per `(user_id, chat_id)`. At `cfg.warn_limit` (per-group) or `cfg.fed_warn_limit` (federation-wide), the flow issues a **federation-wide ban** via `fan_out()` to all active connected groups plus primary groups, creates a ban document in the `bans` collection, and then clears warnings across all groups with `clear_all_warns` (only after at least one group ban succeeds). If `proof_msgs` is provided, proof media is uploaded to the proof channel and the resulting link is attached as an inline keyboard button to all outgoing messages (auto-ban log, replies, non-auto-ban log).
 
 ## Unban: `unban_flow.py`
 

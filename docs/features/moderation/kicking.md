@@ -85,6 +85,8 @@ Reason parsing in `cmd_kick` uses `reason_flow.parse_inline_reason(args, has_exp
 
 When no inline reason remains after parsing, the bot enters `WAITING_REASON` and asks for text or `Skip`.
 
+When the command replies to a user message, the reply wins in `extract_target`, so every argument is reason text: a leading numeric or `@username` token is never consumed as a target (e.g. reply + `/tck 12345 spamming` keeps `12345` in the reason). The shared `extraction.has_reply_target()` helper owns this check (mirroring `extract_target` priority 1, including the anonymous-admin skip) and is used by the kick, mute, warn, and ban entries.
+
 ## Reason and proof behavior
 
 The kick conversation uses `BuildReason("kick")` and `BuildProof("kick")` (both default to `skip_allowed=True`). Both keyboards expose `Skip` (when allowed) and `Cancel`:
@@ -117,7 +119,7 @@ The kick is not attempted in this case; previously this exception was swallowed 
 
 ## `execute_kick` behavior
 
-`execute_kick(update, ctx, target_id, target_name, reason_text, proof_msgs)` lives in `tcbot/modules/helper/workflows/kicking_flow.py:43-146`. The implementation is a single Telegram `ban_chat_member` followed by `unban_chat_member(chat_id, target_id, only_if_banned=True)`. The "kick" is therefore not a separate Telegram primitive, but the visible effect of ban-then-unban in the same chat.
+`execute_kick(update, ctx, target_id, target_name, reason_text, proof_msgs)` lives in `tcbot/modules/helper/workflows/kicking_flow.py`. The implementation is a single Telegram `ban_chat_member` followed by `unban_chat_member(chat_id, target_id, only_if_banned=True)`. The "kick" is therefore not a separate Telegram primitive, but the visible effect of ban-then-unban in the same chat.
 
 Execution order:
 

@@ -101,6 +101,8 @@ Inline reason parsing mirrors other moderation actions:
 
 If no inline reason is present, the bot prompts for a reason. Warning reasons are required, so the reason keyboard does not include `Skip` for `/tcwarn`.
 
+When the command replies to a user message, the reply wins in `extract_target`, so every argument is reason text: a leading numeric or `@username` token is never consumed as a target. The shared `extraction.has_reply_target()` helper owns this check.
+
 ## Proof behavior
 
 Warning proof is optional. The proof step uses `BuildProof("warn")`, which allows `Skip` by default.
@@ -183,7 +185,9 @@ If the counter update fails after the warning insert, the inserted warning is de
 
 `warns_db.warn_count(...)` reads `warn_counts`. If a counter document is missing but historical warnings exist, it backfills the counter from the warning history.
 
-`warns_db.clear_warns(...)` deletes all warning documents for the user/chat pair and deletes the counter document.
+`warns_db.clear_warns(...)` deletes all warning documents for the user/chat pair and deletes the counter document. A warns-delete failure raises instead of returning 0, so callers never misreport an outage as "no warnings to clear"; counter-delete failures stay error-logged for operator repair.
+
+Executor database reads fail closed with a retry notice instead of ending the conversation silently: a failed warn insert, count read, warn list, reset clear, or federation aggregate replies `I couldn't reach the database right now.` (the warn itself stays recorded when the insert already landed, and the threshold re-check is left to a retry).
 
 `warns_db.remove_last_warn(...)` deletes the newest warning by timestamp and `_id`, then decrements the counter. If the counter update cannot be applied, it recalculates and stores the count from remaining history.
 

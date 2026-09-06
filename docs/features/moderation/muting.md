@@ -24,10 +24,12 @@ flowchart TD
     ReasonStep -->|yes| ProofStep[WAITING_PROOF]
     ReasonStep -->|no| ReasonPrompt[WAITING_REASON]
     ReasonPrompt --> ProofStep
-    ProofStep --> Exec[execute_mute: restrict across groups]
-    Exec --> Active[set_active_mute DB write]
-    Exec --> Log[log_mute + log channel post]
-    Exec --> Reply[Edit prompt to summary]
+    ProofStep --> Exec[execute_mute: persist record then restrict]
+    Exec --> Store[log_mute + set_active_mute DB writes]
+    Store -->|write failed| AbortM[Retry notice, no group touched]
+    Store -->|stored| FanOut[fan_out restrict across groups]
+    FanOut --> Log[log channel post]
+    FanOut --> Reply[Edit prompt to summary]
     Unmute[/tcunmute command/] --> ExecU[execute_unmute]
     ExecU --> Guard{get_active_mute present?}
     Guard -->|no| NoMute[Reply: no active mute]
@@ -85,7 +87,7 @@ _DURATION_RE = re.compile(r"^(\d+)(ye|mo|[smhdw])$", re.IGNORECASE)
 | `mo` | months (30 days) |
 | `ye` | years (365 days) |
 
-`parse_duration("3d")` returns `timedelta(days=3)`. Tokens that fail the regex, overflow `timedelta` construction, or exceed 100 years (`_MAX_DURATION_DAYS=36500`) return `None` and are silently dropped from the front of the arg list (because `_DURATION_RE.match(remaining_args[0])` is the guard) and treated as part of the reason text.
+`parse_duration("3d")` returns `timedelta(days=3)`. A token that fails the regex never matches the duration guard and stays in the reason text. A regex-valid but unparsable token (timedelta overflow or above the 100-year `_MAX_DURATION_DAYS=36500` cap) makes `parse_duration` return `None`, and the token is kept as reason text as well: it is popped from the arg list only after a successful parse, so moderator input is never silently dropped.
 
 `fmt_duration(td)` renders:
 
@@ -128,6 +130,8 @@ The target can be specified by:
 
 The reason prompt and proof prompt are stamped with `extra_info` (`<code id>: <duration>`) so the moderator sees the duration even when no reason was typed inline.
 
+When the command replies to a user message, the reply wins in `extract_target`, so every argument is duration/reason text: a leading numeric or `@username` token is never consumed as a target. The shared `extraction.has_reply_target()` helper owns this check.
+
 ## Reason and proof behavior
 
 The mute conversation uses `BuildReason("mute")` and `BuildProof("mute")` (both default to `skip_allowed=True`). Both keyboards expose `Skip` (when allowed) and `Cancel`:
@@ -150,20 +154,21 @@ The mute is not attempted in this case; previously this exception was swallowed 
 
 ## `execute_mute` behavior
 
-`_execute_mute(bot, update, meta)` lives in `tcbot/modules/helper/workflows/muting_flow.py:97-201`. The executor reads target ID, name, reason, admin, duration, proof messages, and the prompt chat/ID from the `meta` dict.
+`_execute_mute(bot, update, meta)` lives in `tcbot/modules/helper/workflows/muting_flow.py`. The executor reads target ID, name, reason, admin, duration, proof messages, and the prompt chat/ID from the `meta` dict.
 
 Execution order:
 
-1. Build the active-groups list: `groups_db.active_groups()` plus any primary groups (`cfg.main_group`, `cfg.exec_group`) that are not already present.
-2. Build the restriction `ChatPermissions(can_send_messages=False)` and the `until_date` value (`utc_now() + duration` or `None` for permanent).
-3. Fan `restrict_chat_member` across the group list with `fan_out(...)`. Failed calls are counted with `count_transient_errors(results)`.
-4. Upload proof to `cfg.proofs` when `proof_msgs` is non-empty. The proof caption uses `parse_logmsg.proof_caption_new`. If upload fails, the mute still proceeds with no proof link.
-5. Run four parallel side-effects via `asyncio.gather(..., return_exceptions=True)`:
-   - `db.mutes_db.log_mute(target_id, chat_id, reason_text, admin_id, duration_secs=...)`.
-   - `db.mutes_db.set_active_mute(target_id, until=until)` so unmute and group-connect replay can find the record.
-   - `bot.send_message(cfg.logs, mute_log, ..., reply_markup=proof_kb)`.
-   - `bot.edit_message_text(summary, chat_id=prompt_chat, message_id=prompt_id, ..., reply_markup=proof_kb)` so the moderator sees the result inline.
-6. If the prompt edit fails, a fallback `msg.reply_text(summary, ..., reply_markup=proof_kb)` is issued.
+1. Resolve the origin chat from the update; abort before any side effect when it is absent.
+2. Build the active-groups list: `groups_db.active_groups()` plus any primary groups (`cfg.main_group`, `cfg.exec_group`) that are not already present. A fetch outage aborts with a retry notice and no group is touched.
+3. Persist `db.mutes_db.log_mute(...)` and `db.mutes_db.set_active_mute(target_id, until=until)` first. Either write failing aborts with a retry notice and no group is touched (fail-closed, mirroring the ban flow and the warn auto-ban): enforcing chats without an `active_mutes` row would leave a restriction that `/tcunmute` refuses to lift.
+4. Build the restriction `ChatPermissions(can_send_messages=False)` and the `until_date` value (`utc_now() + duration` or `None` for permanent).
+5. Re-check the target's effective role and re-run `Demote.execute(..., trigger="mute")` when staff, closing the proof-collection TOCTOU window (best-effort; the mute proceeds even if the re-demote fails).
+6. Fan `restrict_chat_member` across the group list with `fan_out(...)`. Failed calls are counted with `count_transient_errors(results)`.
+7. Upload proof to `cfg.proofs` when `proof_msgs` is non-empty. The proof caption uses `parse_logmsg.proof_caption_new`. If upload fails, the mute still proceeds with no proof link.
+8. Run two parallel side-effects via `asyncio.gather(..., return_exceptions=True)`:
+    - `bot.send_message(cfg.logs, mute_log, ..., reply_markup=proof_kb)`.
+    - `bot.edit_message_text(summary, chat_id=prompt_chat, message_id=prompt_id, ..., reply_markup=proof_kb)` so the moderator sees the result inline.
+9. If the prompt edit fails, a fallback `msg.reply_text(summary, ..., reply_markup=proof_kb)` is issued.
 
 The summary text reads `<user> has been muted <duration>. Reason: <reason>. Applied to <ok>/<total> groups.`
 
@@ -238,6 +243,7 @@ The reply and federation log use `keyboards.action_proof_kb(target_id, proof_lin
 - A duration token that fails the regex is silently dropped and treated as part of the reason text.
 - Auto-demote failure aborts the mute before the reason prompt; previously the failure was swallowed and the mute proceeded anyway.
 - `execute_unmute` with no active mute record replies `<user> has no active federation mute.` and does not fan `restrict_chat_member` across the groups.
+- A failed active-mute read fails closed with a retry notice instead of being treated as "no active mute".
 - `get_active_mute` filters out expired timed mutes at query time, so a stale `active_mutes` row never produces a misleading "restored N/N groups" success.
 - The `_UNMUTE_CMDS` filter is passed to the mute conversation factory as `escape_filter`, so `/tcunmute` typed during `WAITING_REASON` or `WAITING_PROOF` reaches the unmute handler instead of cancelling the mute conversation.
 - `restrict_chat_member` with `until_date=None` produces a permanent restriction on Telegram's side; the bot does not schedule a timed unban through APScheduler.
