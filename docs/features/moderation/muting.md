@@ -85,7 +85,7 @@ _DURATION_RE = re.compile(r"^(\d+)(ye|mo|[smhdw])$", re.IGNORECASE)
 | `mo` | months (30 days) |
 | `ye` | years (365 days) |
 
-`parse_duration("3d")` returns `timedelta(days=3)`. Tokens that fail the regex are silently dropped from the front of the arg list (because `_DURATION_RE.match(remaining_args[0])` is the guard) and treated as part of the reason text.
+`parse_duration("3d")` returns `timedelta(days=3)`. Tokens that fail the regex, overflow `timedelta` construction, or exceed 100 years (`_MAX_DURATION_DAYS=36500`) return `None` and are silently dropped from the front of the arg list (because `_DURATION_RE.match(remaining_args[0])` is the guard) and treated as part of the reason text.
 
 `fmt_duration(td)` renders:
 

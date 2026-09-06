@@ -123,6 +123,7 @@ Execution order:
 
 1. Upload proof to `cfg.proofs` when `proof_msgs` is non-empty. The proof caption uses `parse_logmsg.proof_caption_new`. If upload fails, the kick still proceeds with no proof link.
 2. Call `ctx.bot.ban_chat_member(chat_id, target_id)` to remove the user.
+3. Re-check the target's effective role and re-run `Demote.execute(..., trigger="kick")` when staff, closing the proof-collection TOCTOU window (best-effort; the kick proceeds even if the re-demote fails).
 4. Fan three independent side-effects in parallel with `asyncio.gather(..., return_exceptions=True)`:
    - `unban_chat_member(chat_id, target_id, only_if_banned=True)` - the "user can rejoin" step.
    - `db.kicks_db.log_kick(target_id, chat_id, reason_text, admin_id)` - audit row.
@@ -130,7 +131,7 @@ Execution order:
 5. If the unban call raises, the reply text is appended with a `WARNING:` line so the moderator is told the user is still banned in this chat.
 6. The reply reads `<user> has been kicked. Reason: <reason>. They can rejoin via invite link.` plus the optional `WARNING:` line.
 
-If `ban_chat_member` itself raises (the chat-level exception, not the parallelized children), `execute_kick` catches it, logs, and replies `Couldn't kick <user>: <error>`.
+If `ban_chat_member` itself raises (the chat-level exception, not the parallelized children), `execute_kick` catches it, logs the full traceback, and replies with a generic permissions/retry hint (raw error text is never echoed to the chat).
 
 ## Database impact
 
