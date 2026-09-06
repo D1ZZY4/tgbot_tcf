@@ -16,6 +16,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Fixed
 
+- **Warn auto-ban fail-closed on DB write failure** (`tcbot/modules/helper/workflows/warning_flow.py`, `docs/features/moderation/warnings.md`): when `create_ban` raised at the warn threshold, the flow logged the failure but fanned out chat bans anyway, leaving users banned in chats with no `bans` record — invisible to `/check`, `/tcunban`, and appeal submission (which revalidates the DB). The auto-ban now aborts before any group is touched (mirroring `execute_unban`), keeps the threshold warn recorded, and tells the admin to `/tcban` manually once the database recovers. The now-unreachable `db_record_failed`/`db_record_warning` plumbing is removed.
+
 - **Auth-guard outage replies** (`tcbot/modules/helper/decorators.py`, `database/users_roles.py`): the four tier decorators (`owner_only`, `staff_only`, `mod_only`, `basic_mod_only`) let role-lookup exceptions escape with no user reply during a database outage, while entry handlers already fail closed with a retry message via `resolve_and_check`. Each decorator now catches lookup failures, logs them, and replies with the existing retry text, preserving fail-closed behavior. `CancelledError` still propagates everywhere, including a new re-raise in `is_staff` (previously coerced to `False`).
 
 - **Outage-path reply follow-up** (`tcbot/modules/groups.py`): `cmd_tcfgroups` awaited `active_groups()` unguarded like the broadcast/promote-list paths fixed earlier, crashing the handler on a database outage with no reply. Now catches the failure, logs it, and replies with a server-error message.
