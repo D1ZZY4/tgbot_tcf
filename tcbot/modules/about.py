@@ -27,7 +27,9 @@ _RL_CB_LIMIT: int = 15
 
 # ────────────────────────── About Message ───────────────────────── #
 
-_CNAME = esc(cfg.community_name)
+# * Raw community name; bold()/italic()/esc() at each use site escape it.
+# * Pre-escaping here would double-escape inside bold()/italic() (both escape).
+_CNAME = cfg.community_name
 
 __about_msg__ = (
     f"{bold(_CNAME)}\n\n"
@@ -40,7 +42,7 @@ __about_msg__ = (
     "The same goes for mutes and broadcasts from TC Staff.\n\n"
     f"{bold('History')}\n"
     "Founded in 2024 under the name TFI, which was later disbanded following internal "
-    f"issues. {_CNAME} was formed shortly after to continue the work with a cleaner structure "
+    f"issues. {esc(_CNAME)} was formed shortly after to continue the work with a cleaner structure "
     "and better long-term stability.\n\n"
     f"{italic(f'{_CNAME} is not affiliated with or endorsed by Transsion Holdings. This is an independent community.')}"
 )
