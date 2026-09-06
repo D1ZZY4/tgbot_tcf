@@ -1,6 +1,6 @@
 [project]
 name = "tcbot"
-version = "6.4.0"
+version = "6.5.0"
 description = "TCF | Transsion Core Federation - Telegram Bot"
 requires-python = ">=3.13"
 dependencies = [

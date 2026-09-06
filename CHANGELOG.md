@@ -4,6 +4,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ## [Unreleased]
 
+## [6.5.0] - 2026-09-06
+
 ### Changed
 
 - **Todo diligence wording** (`.agents/rules/tooling-validation.md`): hardened the Todo and Plan Discipline section — diligence mandatory, mark complete immediately with verification, continue to the next item at once, never stale or ignored, never silently dropped.
