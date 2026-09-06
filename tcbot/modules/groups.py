@@ -36,6 +36,10 @@ _RL_CB_LIMIT: int = 15
 # * cleanup / migration become visible without restarting the conversation.
 _GROUPS_CACHE_TTL_S: float = 120.0
 
+# * Telegram caps message text at ~4096 chars; _render() truncates to this
+# * budget so large federations get a partial list instead of an error.
+_MAX_RENDER_CHARS: int = 3800
+
 # ────────────────────── Module & Help Message ───────────────────── #
 
 _CNAME = esc(cfg.community_name)
@@ -74,13 +78,26 @@ __help__: replies.HelpEntry = {
 
 
 def _render(groups: list[GroupDoc], *, detailed: bool) -> str:
-    lines = [f"{bold('Connected Groups')}\n\nCount: {len(groups)}\n"]
-    for g in groups:
+    """Render the group list, truncating to fit Telegram's message limit.
+
+    Telegram rejects messages over ~4096 chars; an unbounded render raises
+    BadRequest (swallowed by callers, leaving the user with nothing) on
+    large federations. Cap the body and name the remainder instead.
+    """
+    header = f"{bold('Connected Groups')}\n\nCount: {len(groups)}\n"
+    lines = [header.rstrip("\n")]
+    used = len(header)
+    for i, g in enumerate(groups):
         title = g.get("title", "Unknown")
         if detailed:
-            lines.append(f"- {esc(title)} - {code(str(g.get('chat_id', 0)))}")
+            line = f"- {esc(title)} - {code(str(g.get('chat_id', 0)))}"
         else:
-            lines.append(f"- {esc(title)}")
+            line = f"- {esc(title)}"
+        if used + len(line) + 1 > _MAX_RENDER_CHARS:
+            lines.append(f"...and {len(groups) - i} more not shown.")
+            break
+        lines.append(line)
+        used += len(line) + 1
     return "\n".join(lines)
 
 
@@ -90,7 +107,7 @@ def _render(groups: list[GroupDoc], *, detailed: bool) -> str:
 @decorators.ratelimiter(limit=_RL_CMD_LIMIT, period=_RL_PERIOD_S)
 @decorators.log_execution
 async def cmd_tcfgroups(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
-    """Reply with a paginated list of all currently active connected groups."""
+    """Reply with the list of all currently active connected groups (truncated to fit)."""
     msg = update.effective_message
     if msg is None:
         return

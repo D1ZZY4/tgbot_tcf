@@ -37,6 +37,10 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Fixed
 
+- **About page no longer double-escapes the community name** (`tcbot/modules/about.py`): `_CNAME` was pre-escaped then passed through `bold()`/`italic()` (which escape), rendering `&amp;` for names with `&<>"'`. The constant is now raw with escaping at each use site (verified the other raw interpolations stay escaped).
+
+- **Group list truncated to fit Telegram limits** (`tcbot/modules/groups.py`): `_render` concatenated every group unbounded, so large federations hit the ~4096-char cap, raised `BadRequest`, and (swallowed) showed nothing. Rendering now caps at 3800 chars with an "...and N more not shown" line; the misleading "paginated" docstring now says truncated.
+
 - **Benign Telegram refusals no longer trip the circuit breaker** (`tcbot/utils/dispatch.py`): `BadRequest` subclasses `NetworkError` in PTB, so the shared except clause counted every benign 400 (`USER_NOT_PARTICIPANT`, `CHAT_NOT_FOUND`, ...) toward the 5-consecutive-failure threshold. A federation ban touching mostly non-member groups tripped the breaker mid-fan-out and skipped the remaining groups unenforced (also contradicting the module docstring). `BadRequest` now bypasses the counter via its own clause (tuple-except also split per project convention). Verified at runtime against installed PTB 22.8: 7 consecutive `BadRequest` leave the circuit closed with 0 counted; 5 `TimedOut` still trip it open.
 
 - **Bounded polling bootstrap retries** (`tcbot/__main__.py`): `bootstrap_retries=-1` hung forever on a network partition during startup, invisible to the run-bot watchdog (which restarts on death, not hangs); upstream PTB itself discourages indefinite retries. Now 5 retries, then the loud crash-and-restart path. Verified against installed PTB 22.8 source that `InvalidToken` aborts immediately either way.
