@@ -259,6 +259,12 @@ Configure in GitHub repository settings → Secrets:
 - Health check: Flask `GET /` endpoint on `PORT`.
 - Secrets policy: use environment variables; never commit real tokens, MongoDB URIs, or private chat IDs.
 
+## Repo activity
+
+Repository activity snapshot (contributions, issues, pull requests, pushes, and top contributors), rendered by Repobeats.
+
+![Repobeats analytics image](https://repobeats.axiom.co/api/embed/1a7b88805412c20305e8076a29a737330bae83ec.svg "Repobeats analytics image")
+
 ## License
 
 Copyright © 2024-2026 Transsion Core, Dizzy, Ave Studio. All rights reserved.
