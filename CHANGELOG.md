@@ -6,6 +6,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Fixed
 
+- **Approved-join enforcement gaps** (`tcbot/modules/greeting.py`): `on_join_request_approved` returned early when the mute lookup failed, before ever checking the ban — a mute-DB outage disabled ban enforcement on that path and let approved banned users stay. The ban branch now runs first. Both branches also missed the best-effort `Demote.execute` that `_handle_member` performs, so staff banned/muted via an approved request kept their federation role; both branches now demote first with the same best-effort semantics.
+
 - **Index fail-fast restored** (`tcbot/database/mongos.py`): `ensure_indexes()` swallowed per-index failures (logged, returned `None`), so the explicit fail-fast checks in `__main__._post_init` and `serverless` startup (`isinstance(indexes_r, BaseException)`) were dead code and the bot served traffic without uniqueness indexes. Failures are still all logged, then the first is re-raised (cancellation preserved), activating both fail-fast paths. Loud startup crash beats silent duplicate moderation records.
 - **Warn-expiry misfire window** (`tcbot/database/scheduler.py`): the daily `expire_old_warns` job used APScheduler defaults (1s misfire grace), so a restart straddling the 24h fire silently dropped that day's expiry (same defect class as the scheduled-unban fix). Now `misfire_grace_time=86400` with `coalesce=True`: at most one coalesced late run per missed day.
 

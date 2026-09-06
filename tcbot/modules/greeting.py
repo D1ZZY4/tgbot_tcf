@@ -273,14 +273,6 @@ async def on_join_request_approved(
         db.bans_db.get_active_ban(user.id),
         return_exceptions=True,
     )
-    if isinstance(mute, BaseException):
-        log.warning(
-            "get_active_mute failed for uid=%d on join_request_approved in chat=%d: %s",
-            user.id,
-            chat.id,
-            mute,
-        )
-        return
     if isinstance(ban, BaseException):
         log.error(
             "get_active_ban failed for uid=%d on join_request_approved in chat=%d: %s",
@@ -293,6 +285,28 @@ async def on_join_request_approved(
         # * The request-time decline in on_join_request can be beaten by a
         # * ban created after approval or a failed decline. Enforce here as
         # * well; ban_chat_member on an already-removed user is benign.
+        # * Checked before the mute-failure early-return below so a mute-DB
+        # * outage cannot disable ban enforcement on this path.
+        # * Auto-demote first (best-effort), matching _handle_member: a banned
+        # * user must not keep a federation role.
+        target_role = await db.users_roles.get_effective_role(user.id)
+        if target_role:
+            try:
+                await Demote.execute(
+                    ctx.bot,
+                    user.id,
+                    user.first_name or str(user.id),
+                    target_role,
+                    0,
+                    "",
+                    trigger="ban",
+                )
+            except Exception:
+                log.exception(
+                    "Auto-demote on join_request_approved ban failed for uid=%d role=%s",
+                    user.id,
+                    target_role,
+                )
         try:
             await ctx.bot.ban_chat_member(chat.id, user.id)
         except Exception:
@@ -302,9 +316,37 @@ async def on_join_request_approved(
                 chat.id,
             )
         return
+    if isinstance(mute, BaseException):
+        log.warning(
+            "get_active_mute failed for uid=%d on join_request_approved in chat=%d: %s",
+            user.id,
+            chat.id,
+            mute,
+        )
+        return
     if not mute:
         return
 
+    # * Muted staff must not keep their role while restricted (best-effort),
+    # * matching _handle_member and the ban branch above.
+    mute_role = await db.users_roles.get_effective_role(user.id)
+    if mute_role:
+        try:
+            await Demote.execute(
+                ctx.bot,
+                user.id,
+                user.first_name or str(user.id),
+                mute_role,
+                0,
+                "",
+                trigger="mute",
+            )
+        except Exception:
+            log.exception(
+                "Auto-demote on join_request_approved mute failed for uid=%d role=%s",
+                user.id,
+                mute_role,
+            )
     until = mute.get("until_date")
     perms = ChatPermissions(can_send_messages=False)
     try:
