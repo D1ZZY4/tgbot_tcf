@@ -75,7 +75,18 @@ async def _handle_member(
         # * etc.) we still proceed with the chat-level ban because the user IS
         # already banned in the DB -- the chat-level ban is just the side-effect
         # enforcement. The reply below surfaces the partial state.
-        target_role = await db.users_roles.get_effective_role(member.id)
+        # * The role lookup is guarded too: a transient failure must not skip
+        # * the chat-level ban below (the user IS banned in the DB). Demote is
+        # * best-effort here, so proceed as non-staff with a loud log instead.
+        try:
+            target_role = await db.users_roles.get_effective_role(member.id)
+        except Exception:
+            log.exception(
+                "Role lookup failed on join-auto-ban for uid=%d; "
+                "proceeding with ban anyway",
+                member.id,
+            )
+            target_role = None
         if target_role:
             try:
                 await Demote.execute(
@@ -131,8 +142,18 @@ async def _handle_member(
     if mute:
         # * Muted staff must not keep their role while restricted, matching
         # * the ban branch above. Best-effort: a demote failure still leaves
-        # * the restrict below as the enforcement side-effect.
-        mute_role = await db.users_roles.get_effective_role(member.id)
+        # * the restrict below as the enforcement side-effect. The lookup
+        # * itself is guarded for the same reason: a transient failure must
+        # * not skip the re-apply, so proceed as non-staff with a loud log.
+        try:
+            mute_role = await db.users_roles.get_effective_role(member.id)
+        except Exception:
+            log.exception(
+                "Role lookup failed on join-mute for uid=%d; "
+                "proceeding with restrict anyway",
+                member.id,
+            )
+            mute_role = None
         if mute_role:
             try:
                 await Demote.execute(
@@ -288,8 +309,18 @@ async def on_join_request_approved(
         # * Checked before the mute-failure early-return below so a mute-DB
         # * outage cannot disable ban enforcement on this path.
         # * Auto-demote first (best-effort), matching _handle_member: a banned
-        # * user must not keep a federation role.
-        target_role = await db.users_roles.get_effective_role(user.id)
+        # * user must not keep a federation role. The lookup is guarded: a
+        # * transient failure must not skip the ban below, so proceed as
+        # * non-staff with a loud log instead.
+        try:
+            target_role = await db.users_roles.get_effective_role(user.id)
+        except Exception:
+            log.exception(
+                "Role lookup failed on join_request_approved ban for uid=%d; "
+                "proceeding with ban anyway",
+                user.id,
+            )
+            target_role = None
         if target_role:
             try:
                 await Demote.execute(
@@ -328,8 +359,18 @@ async def on_join_request_approved(
         return
 
     # * Muted staff must not keep their role while restricted (best-effort),
-    # * matching _handle_member and the ban branch above.
-    mute_role = await db.users_roles.get_effective_role(user.id)
+    # * matching _handle_member and the ban branch above. The lookup is
+    # * guarded for the same reason: proceed as non-staff with a loud log
+    # * instead of skipping the re-apply.
+    try:
+        mute_role = await db.users_roles.get_effective_role(user.id)
+    except Exception:
+        log.exception(
+            "Role lookup failed on join_request_approved mute for uid=%d; "
+            "proceeding with restrict anyway",
+            user.id,
+        )
+        mute_role = None
     if mute_role:
         try:
             await Demote.execute(
