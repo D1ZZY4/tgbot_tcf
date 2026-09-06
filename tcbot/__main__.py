@@ -1,6 +1,6 @@
 # © Copyright 2024 - 2026 Transsion Core
 # © Copyright 2024 - 2026 Dizzy
-# © Copyright 2026 Ave Studio
+# © Copyright 2026 Ave Labs
 
 """Bot entry point: initialises the PTB application and starts in webhook or polling mode."""
 
@@ -522,10 +522,15 @@ def main() -> None:
             )
             log.info("Starting long-polling...")
             stage = "polling"
+            # * Bounded bootstrap retries: -1 would hang forever on a network
+            # * partition, invisible to the run-bot watchdog (which restarts on
+            # * death, not on hangs). InvalidToken still aborts immediately
+            # * inside PTB (never retried), so this only bounds transient
+            # * network failures before the loud crash-and-restart path below.
             app.run_polling(
                 drop_pending_updates=True,
                 allowed_updates=Update.ALL_TYPES,
-                bootstrap_retries=-1,
+                bootstrap_retries=5,
             )
     except SystemExit:
         # * Module discovery uses SystemExit on failure; logging already reported the cause.

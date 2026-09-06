@@ -37,6 +37,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Fixed
 
+- **Bounded polling bootstrap retries** (`tcbot/__main__.py`): `bootstrap_retries=-1` hung forever on a network partition during startup, invisible to the run-bot watchdog (which restarts on death, not hangs); upstream PTB itself discourages indefinite retries. Now 5 retries, then the loud crash-and-restart path. Verified against installed PTB 22.8 source that `InvalidToken` aborts immediately either way.
+
 - **Ban-ID collision retry for auto-generated IDs** (`tcbot/database/bans_db.py`): `create_ban` propagated a `DuplicateKeyError` on 10-char random ID collision, failing the moderation action. Retries once with a fresh ID; explicit caller-supplied IDs (reused for appeal links and log patches) still propagate to avoid orphaning those references.
 
 - **Group record precision fixes** (`tcbot/database/groups_db.py`): `add_group` rewrote `added_date` on every re-add, corrupting the first-connect date shown in stats; it now uses `$setOnInsert`. `deactivate_group` busted the cached groups list even when nothing matched; no-match is now a pure no-op. `migrate_group` marked the new chat connected (120 s cache) even when only a pending row moved; the `True` mark and list invalidation now require the federated row itself to move.
