@@ -37,6 +37,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Fixed
 
+- **Cache L3 write no longer blocks the hot path** (`tcbot/database/cache.py`): `TwoLevelCache.get_or_fetch` awaited the Redis SET after every DB fetch, adding up to a full Redis round-trip (10 s socket timeout) to each L1 miss even though the value was already served from L1. The write is now fire-and-forget; FIFO ordering against later invalidates is preserved by the mutation chain and failures still surface via the task log callback.
+
 - **Stats search falls back to a reply without a result card** (`tcbot/modules/stats.py`): on the message-less search-panel path the query was deleted but results had no card to edit into, silently dropping them. The results are now sent as a reply instead; stored paging still works.
 
 - **Connect keeps pending row when registration fails** (`tcbot/modules/helper/workflows/connected_flow.py`): `complete_join` fanned `add_group` and `remove_pending` in parallel, so an `add_group` failure still wiped the pending row and left the owner with no retry path but re-adding the bot (same gather-ordering bug class already fixed on the prompt paths). `remove_pending` now runs only after the group record lands, with failures logged.

@@ -1,6 +1,6 @@
 # © Copyright 2024 - 2026 Transsion Core
 # © Copyright 2024 - 2026 Dizzy
-# © Copyright 2026 Ave Studio
+# © Copyright 2026 Ave Labs
 
 """Caching layer: in-process TTL cache (L1) + optional Redis (L2).
 
@@ -329,17 +329,20 @@ class TwoLevelCache[T]:
                     except Exception as exc:
                         log.debug("Redis get failed for %s: %s", rkey, exc)
 
-                # L3: DB fetch
+                # L3: DB fetch. The L2 write is fire-and-forget: the value is
+                # * already in L1, and awaiting the Redis SET would add a full
+                # * Redis round-trip (up to the 10 s socket timeout) to every
+                # * L1 miss. Ordering against later invalidates is preserved
+                # * by the FIFO mutation chain; write errors still surface via
+                # * the task's done-callback log.
                 val = await fetch()
                 self._mem.put(key, val)
                 if rc is not None:
                     rkey = self._rkey(key)
                     payload = json.dumps(val, cls=_MongoJSONEncoder)
-                    task = self._enqueue_redis_mutation(
+                    self._enqueue_redis_mutation(
                         lambda: self._redis_set(rc, rkey, payload)
                     )
-                    if task is not None:
-                        await asyncio.shield(task)
 
                 return cast("T", val)
         finally:
