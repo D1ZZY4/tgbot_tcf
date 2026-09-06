@@ -91,7 +91,7 @@ Suggested commands:
 ```bash
 git --no-pager diff --stat
 git --no-pager diff --check
-ruff check .
+uv run ruff check .
 ```
 
 ## Finding Format

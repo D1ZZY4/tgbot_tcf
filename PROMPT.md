@@ -195,11 +195,11 @@ include:
 
 ```bash
 uv sync --frozen
-ruff format --check .
-ruff check .
-pyright tcbot/
-python -m compileall -q tcbot
-python -c "import tcbot"
+uv run ruff format --check .
+uv run ruff check .
+uv run --with pyright pyright tcbot/
+uv run python -m compileall -q tcbot
+uv run python -c "import tcbot"
 git diff --check
 ```
 

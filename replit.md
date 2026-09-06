@@ -35,7 +35,7 @@ never committed to the repository and do not require a `.env` file.
 The Replit run command is:
 
 ```bash
-python -m tcbot
+uv run python -m tcbot
 ```
 
 This starts the bot in webhook mode when `WEBHOOK_URL` is set, or falls back
@@ -69,7 +69,7 @@ Local development without a public URL falls back to polling automatically.
 Ensure the `.replit` file contains:
 
 ```ini
-run = "python -m tcbot"
+run = "uv run python -m tcbot"
 ```
 
 For Python 3.14, the Replit Nix environment should provide a compatible
@@ -98,7 +98,7 @@ The `uv.lock` file ensures reproducible installs on Replit. Do not commit
 - [ ] `OWNER_ID` set in Replit Secrets.
 - [ ] `WEBHOOK_URL` set for production webhook mode.
 - [ ] `WEBHOOK_SECRET` set for webhook validation.
-- [ ] Run command is `python -m tcbot`.
+- [ ] Run command is `uv run python -m tcbot`.
 - [ ] `uv sync --frozen` has been run after dependency changes.
 - [ ] Flask keep-alive is running on the assigned `PORT`.
 - [ ] Bot status shows connected in Telegram.
@@ -138,6 +138,6 @@ connection string or a MongoDB Atlas cluster.
 | Secrets | `config.env` file | Replit Secrets manager |
 | Transport | Polling (no public URL) | Webhook (with `WEBHOOK_URL`) |
 | Dependencies | `uv sync --frozen` | `uv sync --frozen` |
-| Run command | `python -m tcbot` | `python -m tcbot` |
+| Run command | `uv run python -m tcbot` | `uv run python -m tcbot` |
 | MongoDB | Local or Atlas | Atlas or external |
 | Redis | Optional local | Optional external |

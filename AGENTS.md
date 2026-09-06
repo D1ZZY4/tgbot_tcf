@@ -193,15 +193,15 @@ uv sync --frozen
 Run the bot locally:
 
 ```bash
-python -m tcbot
+uv run python -m tcbot
 ```
 
 Format, lint, and type-check:
 
 ```bash
-ruff format .
-ruff check --fix .
-pyright .
+uv run ruff format .
+uv run ruff check --fix .
+uv run --with pyright pyright .
 ```
 
 Run with Docker Compose:

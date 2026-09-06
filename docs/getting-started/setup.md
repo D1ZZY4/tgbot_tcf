@@ -20,20 +20,20 @@ git clone <repo-url>
 cd tcbot
 uv sync --frozen
 cp config.env.example config.env
-python -m tcbot
+uv run python -m tcbot
 ```
 
 The local command loads `config.env` through `python-dotenv`. Fill in the
 required values before starting the bot.
 
-Use `python -m tcbot` if your platform exposes Python as `python3`.
+Use `uv run python -m tcbot` so the locked `uv` environment is used regardless of whether your platform exposes Python as `python` or `python3`.
 
 Format and lint after edits:
 
 ```bash
-ruff format .
-ruff check --fix .
-pyright tcbot/
+uv run ruff format .
+uv run ruff check --fix .
+uv run --with pyright pyright tcbot/
 ```
 
 ## Docker setup
@@ -55,7 +55,7 @@ features you enable in `.env`. The `bot` service waits for both MongoDB and
 Redis health checks before startup. The image runs:
 
 ```bash
-python -m tcbot
+uv run --frozen python -m tcbot
 ```
 
 ## Hosted setup
@@ -67,7 +67,7 @@ For Replit or another hosting platform:
 2. Store the required destination values (`LOGS`, plus `PROOFS`, `APPEALS`,
    and `APPEAL_DISCUSSION_TOPIC` when those features are enabled) as
    environment variables or secrets.
-3. Start the bot with `python -m tcbot`.
+3. Start the bot with `uv run python -m tcbot`.
 4. Make sure the Flask health endpoint port matches `PORT`.
 
 Do not commit a filled `config.env` file.

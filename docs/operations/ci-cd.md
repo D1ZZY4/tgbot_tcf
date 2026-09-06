@@ -27,9 +27,9 @@ The project uses 5 automated workflows for continuous integration, code quality,
 - Pull requests to `main`
 
 **What it does:**
-- Runs `ruff format --check .` to verify formatting without modifying files
-- Runs `ruff check .` to catch all lint violations
-- Runs `python -c "import tcbot"` to verify all imports resolve cleanly
+- Runs `uv run ruff format --check .` to verify formatting without modifying files
+- Runs `uv run ruff check .` to catch all lint violations
+- Runs `uv run python -c "import tcbot"` to verify all imports resolve cleanly
 - **Fails the PR** if any step exits with a non-zero code
 
 **Why this exists:**
@@ -50,8 +50,8 @@ protection settings.
 - Manual dispatch
 
 **What it does:**
-- Runs `ruff format .` to auto-format code
-- Runs `ruff check --fix .` to auto-fix linting issues
+- Runs `uv run ruff format .` to auto-format code
+- Runs `uv run ruff check --fix .` to auto-fix linting issues
 - Creates or updates an `auto-fix/ruff` branch and pull request when fixes are
   found outside a pull-request run
 - **Comments on PR** with fix suggestions (if PR)
@@ -208,8 +208,8 @@ View workflow
 ### For Developers
 
 1. Run the same checks locally before opening a pull request:
-   `ruff format --check .`, `ruff check .`, and
-   `python -c "import tcbot"`.
+   `uv run ruff format --check .`, `uv run ruff check .`, and
+   `uv run python -c "import tcbot"`.
 2. Review auto-fix and dependency pull requests before merging them.
 3. Treat Telegram notifications as status updates, not as a substitute for
    reviewing the workflow result.

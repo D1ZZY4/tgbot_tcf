@@ -124,7 +124,7 @@ graph TD
 
 ```mermaid
 sequenceDiagram
-    participant Proc as python -m tcbot
+    participant Proc as uv run python -m tcbot
     participant Config as tcbot.__init__
     participant Main as tcbot.__main__
     participant Alive as tcbot.alive

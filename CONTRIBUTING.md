@@ -47,7 +47,7 @@ chat IDs.
 Run the bot:
 
 ```bash
-python -m tcbot
+uv run python -m tcbot
 ```
 
 ## Development Workflow
@@ -68,11 +68,11 @@ python -m tcbot
 Run the checks relevant to the change. For most code changes:
 
 ```bash
-ruff format --check .
-ruff check .
-pyright .
-python -m compileall -q tcbot
-python -c "import tcbot"
+uv run ruff format --check .
+uv run ruff check .
+uv run --with pyright pyright .
+uv run python -m compileall -q tcbot
+uv run python -c "import tcbot"
 git diff --check
 ```
 

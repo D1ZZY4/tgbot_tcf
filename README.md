@@ -193,7 +193,7 @@ The project uses **5 automated GitHub Actions workflows** for continuous integra
 
 CI check that reports whether the following validations pass:
 - Runs on push to `main`, `feat/**`, `fix/**` branches and on all PRs to `main`
-- Runs `ruff format --check .` (format check), `ruff check .` (lint), and `python -c "import tcbot"` (import check)
+- Runs `uv run ruff format --check .` (format check), `uv run ruff check .` (lint), and `uv run python -c "import tcbot"` (import check)
 - The workflow run fails if any step has an error. Branch protection can use
   this result as a merge requirement.
 
@@ -253,7 +253,7 @@ Configure in GitHub repository settings → Secrets:
 
 ## Current Status
 
-- Runtime entry point: `python -m tcbot`.
+- Runtime entry point: `uv run python -m tcbot`.
 - Dependency management: `uv` and `uv.lock`.
 - Database: MongoDB/Motor with startup index creation.
 - Health check: Flask `GET /` endpoint on `PORT`.

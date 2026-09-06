@@ -143,7 +143,7 @@ mongorestore --uri="${MONGODB_URI}" --db="${DB_NAME}" --drop \
 After any restore, verify the bot starts cleanly and all subsystems are healthy:
 
 ```bash
-python -m tcbot &
+uv run python -m tcbot &
 curl http://localhost:${PORT:-5000}/health
 ```
 
