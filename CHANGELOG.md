@@ -4,6 +4,10 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ## [Unreleased]
 
+### Fixed
+
+- **Index fail-fast restored** (`tcbot/database/mongos.py`): `ensure_indexes()` swallowed per-index failures (logged, returned `None`), so the explicit fail-fast checks in `__main__._post_init` and `serverless` startup (`isinstance(indexes_r, BaseException)`) were dead code and the bot served traffic without uniqueness indexes. Failures are still all logged, then the first is re-raised (cancellation preserved), activating both fail-fast paths. Loud startup crash beats silent duplicate moderation records.
+
 ## [6.5.0] - 2026-09-06
 
 ### Changed

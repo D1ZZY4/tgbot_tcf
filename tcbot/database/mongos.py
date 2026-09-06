@@ -129,7 +129,15 @@ async def connect() -> None:
 
 
 async def ensure_indexes() -> None:
-    """Create all critical collection indexes in parallel. No-op if they already exist."""
+    """Create all critical collection indexes in parallel. No-op if they already exist.
+
+    Raises the first index failure after logging every failure, so the
+    fail-fast checks in ``__main__._post_init`` and ``serverless`` startup
+    actually fire. Serving traffic without uniqueness indexes (bans
+    ``ban_id``, ``warn_counts`` per-user counter, one-pending-request) risks
+    duplicate moderation records, which is worse than a loud startup crash
+    that the runner watchdog restarts from.
+    """
     results = await asyncio.gather(
         # * Serves get_active_ban(): filter on banned_user_id + is_active, sort on
         # * timestamp + ban_id. Compound index replaces the separate prefix index below.
@@ -215,6 +223,9 @@ async def ensure_indexes() -> None:
     if failed:
         for exc in failed:
             log.error("Index creation failed: %s", exc)
+        # * Re-raise (preserving cancellation) instead of limping on without
+        # * indexes: the startup fail-fast checks depend on this raising.
+        raise failed[0]
     log.info(
         "MongoDB indexes ensured (%d/%d succeeded).",
         len(results) - len(failed),
