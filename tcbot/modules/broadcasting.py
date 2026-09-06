@@ -18,6 +18,7 @@ from tcbot import database as db
 from tcbot.database.documents import GroupDoc
 from tcbot.modules.helper import decorators, parse_logmsg, replies
 from tcbot.modules.helper.formatter import code, esc
+from tcbot.modules.helper.parse_editmsg import safe_reply
 from tcbot.utils.dispatch import count_errors, fan_out
 from tcbot.utils.prefixes import build_prefixed_filters, parse_cmd_args
 
@@ -94,30 +95,27 @@ async def cmd_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     has_reply = bool(msg.reply_to_message)
     if not broadcast_text and not has_reply:
-        try:
-            await msg.reply_text(
-                "Please provide a message to broadcast, or reply to a message."
-            )
-        except Exception as exc:
-            log.debug("cmd_broadcast no-content reply failed: %s", exc)
+        await safe_reply(
+            msg,
+            "Please provide a message to broadcast, or reply to a message.",
+            log_label="cmd_broadcast no-content",
+        )
         return
 
     try:
         groups = await db.groups_db.active_groups()
     except Exception:
         log.exception("active_groups failed during broadcast")
-        try:
-            await msg.reply_text(
-                "Could not load the group list due to a server error. Please try again."
-            )
-        except Exception as exc:
-            log.debug("cmd_broadcast groups-failed reply failed: %s", exc)
+        await safe_reply(
+            msg,
+            "Could not load the group list due to a server error. Please try again.",
+            log_label="cmd_broadcast groups-failed",
+        )
         return
     if not groups:
-        try:
-            await msg.reply_text(replies.ERR_NO_CONNECTED_GROUPS)
-        except Exception as exc:
-            log.debug("cmd_broadcast no-groups reply failed: %s", exc)
+        await safe_reply(
+            msg, replies.ERR_NO_CONNECTED_GROUPS, log_label="cmd_broadcast no-groups"
+        )
         return
 
     status = None

@@ -13,10 +13,10 @@ from typing import TYPE_CHECKING
 from tcbot import cfg
 from tcbot import database as db
 from tcbot.modules.helper import parse_logmsg
-from tcbot.modules.helper.formatter import bold, esc
+from tcbot.modules.helper.formatter import bold, esc, mention
 
 if TYPE_CHECKING:
-    from telegram import Bot
+    from telegram import Bot, Message
 
 log = logging.getLogger(__name__)
 
@@ -95,7 +95,63 @@ class Demote:
             return_exceptions=True,
         ):
             if isinstance(result, BaseException):
-                log.warning(
+                # * Error-level so a silent audit/DM gap ships to LOG_ERRORS
+                # * like other moderation log-send failures; the role itself
+                # * was already removed, so this never blocks the caller.
+                log.error(
                     "Demote log/DM send failed for target=%d: %s", target_id, result
                 )
+        return True
+
+    @classmethod
+    async def auto_demote_or_abort(
+        cls,
+        msg: Message,
+        bot: Bot,
+        target_id: int,
+        target_display: str,
+        target_role: str,
+        executor_id: int,
+        executor_fname: str,
+        *,
+        trigger: str,
+    ) -> bool:
+        """Auto-demote a role-holding target, or reply and signal abort.
+
+        Shared by the ban/kick/mute entry handlers, whose demote-fail blocks
+        were byte-identical apart from the action noun. Runs
+        :meth:`execute` and returns ``True`` when the caller may proceed.
+        When the demote raises, logs the failure, tells the executor to
+        demote manually, and returns ``False`` so the caller ends the
+        conversation without enforcing — a banned/muted/kicked user must
+        never keep a federation role.
+        """
+        try:
+            await cls.execute(
+                bot,
+                target_id,
+                target_display,
+                target_role,
+                executor_id,
+                executor_fname,
+                trigger=trigger,
+            )
+        except Exception:
+            log.exception(
+                "Auto-demote before %s failed for target=%d role=%s",
+                trigger,
+                target_id,
+                target_role,
+            )
+            try:
+                await msg.reply_text(
+                    f"{mention(target_id, target_display)} "
+                    f"holds a federation role ({target_role}) and the auto-demote "
+                    f"step failed, so the {trigger} cannot proceed safely. Demote "
+                    f"them manually with /tcdemote and retry the {trigger}.",
+                    parse_mode="HTML",
+                )
+            except Exception as exc:
+                log.debug("auto-demote-fail reply failed: %s", exc)
+            return False
         return True

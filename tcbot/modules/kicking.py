@@ -142,39 +142,20 @@ async def cmd_kick(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
             log.debug("cmd_kick refusal reply failed: %s", exc)
         return ConversationHandler.END
 
-    if target_role:
-        # * Auto-demote must succeed before the kick to preserve the
-        # * role-vs-state invariant: a kicked user must not still hold a
-        # * federation role (they would retain the role while the kick
-        # * completes, breaking future permission checks). If the demote
-        # * fails, do not proceed with the kick.
-        try:
-            await Demote.execute(
-                ctx.bot,
-                target_id,
-                target_name or str(target_id),
-                target_role,
-                admin.id,
-                admin.first_name,
-                trigger="kick",
-            )
-        except Exception:
-            log.exception(
-                "Auto-demote before kick failed for target=%d role=%s",
-                target_id,
-                target_role,
-            )
-            try:
-                await msg.reply_text(
-                    f"{mention(target_id, target_name or str(target_id))} "
-                    f"holds a federation role ({target_role}) and the auto-demote "
-                    "step failed, so the kick cannot proceed safely. Demote them "
-                    "manually with /tcdemote and retry the kick.",
-                    parse_mode="HTML",
-                )
-            except Exception as exc:
-                log.debug("cmd_kick demote-fail reply failed: %s", exc)
-            return ConversationHandler.END
+    # * Auto-demote must succeed before the kick to preserve the
+    # * role-vs-state invariant. The helper replies and signals abort
+    # * when the demote fails, so the kick never proceeds on a role holder.
+    if target_role and not await Demote.auto_demote_or_abort(
+        msg,
+        ctx.bot,
+        target_id,
+        target_name or str(target_id),
+        target_role,
+        admin.id,
+        admin.first_name,
+        trigger="kick",
+    ):
+        return ConversationHandler.END
 
     ctx.user_data.update(
         {

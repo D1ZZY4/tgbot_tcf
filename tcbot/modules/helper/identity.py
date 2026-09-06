@@ -103,6 +103,13 @@ async def classify(
     round-trip rather than two, even when the role is ultimately unused (e.g.
     self / bot / Telegram early-returns).
 
+    Caller contract: a role-lookup failure degrades to ``kind="user"`` (fail
+    open), so every moderation caller MUST pair this with an independent
+    fail-closed role read — ``resolve_and_check`` for ban/kick/mute/warn/unban
+    entries, or a guarded ``get_effective_role`` fetch for promote/demote.
+    The paired read rejects the action on lookup failure, which is what keeps
+    the degraded ``"user"`` kind from becoming an authorization bypass.
+
     """
     # * Both are independent cached reads; run in parallel.
     # * return_exceptions=True prevents a transient DB error from propagating
