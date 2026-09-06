@@ -162,7 +162,10 @@ Expected response shape (HTTP 200 when all core subsystems are ready):
 
 `redis` is `"disabled"` when `REDIS_URL` is not configured. A degraded response
 uses HTTP `503`; inspect the individual fields before deciding whether a
-restore or a restart is required. The current ban command does not create
+restore or a restart is required. Note that `redis` is informational only:
+the overall status (and the HTTP code) depends on MongoDB, the scheduler,
+and the circuit breakers, so `"redis": "error"` alone still returns 200.
+The current ban command does not create
 timed-ban schedules, so do not assume that every restore contains unban jobs.
 
 ---

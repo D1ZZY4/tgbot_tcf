@@ -4,6 +4,10 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ## [Unreleased]
 
+### Documentation
+
+- **Audit doc sync, round 3** (`docs/features/moderation/connecting.md`, `disconnecting.md`, `groups.md`, `docs/features/roles/promote.md`, `demote.md`, `docs/features/statistics.md`, `docs/operations/backup-and-restore.md`, `docs/architecture/database.md`): `connecting.md` no longer claims parallel complete_join/prompt-edit or parallel add_pending/prompt-edit (both are sequential by design, with comments explaining the false-confirmation bugs parallelism caused), names the real `harvest_user_identity` helper, and documents the primary-group reject in the correct step order; `disconnecting.md` shows deactivate-first-then-3-parallel with matching mermaid; `groups.md` toggle docs match the answer-first + 120 s TTL code; `promote.md` drops the remove-then-insert claim (atomic upsert), qualifies the self/bot rejection (other bots are undetectable) and the callback re-check (rank-only, no originator binding); `demote.md` fixes the founder/no-role mechanism, the two-gather callback sequence, the self/founder quotes, and lists all six `Demote.execute` call sites; `statistics.md` fixes the empty-roster string and the Check/profile text hint; `backup-and-restore.md` notes `redis` health is informational-only; `database.md` drops the nonexistent cancel-scope wording.
+
 ### Fixed
 
 - **Outage-path reply follow-up** (`tcbot/modules/groups.py`): `cmd_tcfgroups` awaited `active_groups()` unguarded like the broadcast/promote-list paths fixed earlier, crashing the handler on a database outage with no reply. Now catches the failure, logs it, and replies with a server-error message.

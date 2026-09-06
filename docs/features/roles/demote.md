@@ -24,12 +24,14 @@ flowchart TD
 
 ## Purpose
 
-Demotion removes a federation role from a user. Four callers reach the same `Demote.execute` method:
+Demotion removes a federation role from a user. Six invocation paths reach the same `Demote.execute` method (entry points plus pre-fan-out re-demotes share these paths):
 
 1. `/tcdemote`: manual demotion by Founder or Admin.
 2. Ban entry handler (`/tcban`): auto-demote a role-holding target before the federation ban.
 3. Kick entry handler (`/tckick`): auto-demote a role-holding target before the per-group kick.
 4. Mute entry handler (`/tcmute`): auto-demote a role-holding target before the per-group mute.
+5. Join auto-ban / mute re-apply (`greeting._handle_member` and `on_join_request_approved`): auto-demote a role-holding target before enforcing on join.
+6. Warn-limit auto-ban (`warning_flow.execute_warn`): auto-demote when a warned user about to be federation-banned happens to hold a role.
 
 The same log format is emitted in every case; there is no separate "Auto-Demote" template.
 
@@ -79,8 +81,8 @@ The federation log emitted by `parse_logmsg.demoted` is identical in every case;
 
 1. Founder or Admin runs `/tcdemote <target>`. The `@staff_only` decorator rejects non-staff executors.
 2. `cmd_demote` resolves the target via `extract_target` in parallel with the executor's effective role (`users_roles.get_effective_role`).
-3. The bot reads the target's effective role:
-   - If `None` or `"founder"`, the bot replies `That user doesn't hold a role that can be removed.` and stops.
+3. The bot reads the target's effective role. Identity refusal fires first (`self`, this bot, Telegram, other bots, anonymous admin, and Founder all have dedicated refusal lines, e.g. Founder gets `... is the Founder - try /transferowner ...`).
+   - If the role is `None`/empty, the bot replies `That user doesn't hold a role that can be removed.` and stops.
    - If the target is `"admin"` and the executor is not Founder, the bot replies `Only the Founder can demote an Admin.` and stops.
 4. Otherwise the bot sends a confirmation card with `Confirm` / `Cancel` buttons via `keyboards.demote_confirm_kb(target_id)`.
 
@@ -90,8 +92,8 @@ Callback data: `demote_confirm:<target_id>` and `demote_cancel:<target_id>`.
 
 `on_demote_confirm`:
 
-1. Re-checks the executor's effective role; if no longer Founder/Admin, answers with an alert and removes the keyboard.
-2. Fetches the target role and the target's cached first name in parallel with `q.answer()`.
+1. Re-checks the executor's effective role alongside `q.answer()`; if no longer Founder/Admin, answers with an alert and removes the keyboard.
+2. Then fetches the target role and the target's mention data (name + username) in a second parallel gather.
 3. Re-applies the Admin-only-Founder rule.
 4. Calls `Demote.execute(ctx.bot, target_id, target_fname, target_role, admin.id, admin.first_name, trigger=None)`.
 5. On a successful removal, edits the confirmation message to `Done. <mention> - <code id> has been removed from <Role>.` and clears the keyboard.
@@ -116,7 +118,7 @@ if target_role:
     )
 ```
 
-Auto-demote is also invoked by `warning_flow.execute_warn` when a warn-limit auto-ban is about to fire and the warned user happens to hold a federation role (an edge case; staff should not normally accumulate warnings).
+The warn-limit path above is an edge case; staff should not normally accumulate warnings.
 
 ## Permission matrix
 
@@ -160,8 +162,8 @@ Both helpers invalidate the affected user's entry in `effective_role_cache` so t
 
 - If the target's role record was already gone by the time the callback fires, `Demote.execute` returns False and the caller surfaces a friendly message.
 - DM and log channel sends are wrapped in `asyncio.gather(..., return_exceptions=True)`; a failed DM does not roll back the role removal.
-- Self-demotion is rejected by `cmd_demote` (`Can't demote yourself - ask a higher-up if needed.`).
-- Founder demotion is rejected at the role check (`That user doesn't hold a role that can be removed.`).
+- Self-demotion is rejected by `cmd_demote` via identity refusal (`Demoting yourself? Bold. Ask a higher-up if you really mean it.`).
+- Founder demotion is rejected by identity refusal before the role check (`... is the Founder - try /transferowner ...`); the no-role message only fires for genuinely role-less targets.
 - Auto-demote is best-effort: a failure inside `warning_flow.execute_warn` is logged via `log.error` but never aborts the surrounding action.
 
 ## Behavior reference

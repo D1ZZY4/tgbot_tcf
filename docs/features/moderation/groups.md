@@ -77,8 +77,8 @@ Two `CallbackQueryHandler` registrations handle the inline toggle:
 
 Both call the shared `_toggle(update, ctx, detailed=...)` helper:
 
-1. If `ctx.user_data["groups_cache"]` exists, run `q.answer()` and `safe_edit(message, _render(groups, detailed=...), reply_markup=tcgroups_kb(detailed=...))` in parallel via `asyncio.gather(..., return_exceptions=True)`.
-2. Otherwise (the user re-tapped after a bot restart), run `q.answer()` and `db.groups_db.active_groups()` in parallel. The new list is stashed in `ctx.user_data["groups_cache"]` and the message is edited through `safe_edit`.
+1. If `ctx.user_data["groups_cache"]` exists and is younger than `_GROUPS_CACHE_TTL_S` (120 s), answer first (an expired query surfaces immediately instead of hiding behind the edit result), then edit via `safe_edit(message, _render(groups, detailed=...), reply_markup=tcgroups_kb(detailed=...))`.
+2. Otherwise (stale/missing cache, e.g. after a bot restart or a connect/disconnect elsewhere), run `q.answer()` and `db.groups_db.active_groups()` in parallel. The new list is stashed in `ctx.user_data["groups_cache"]` (with `groups_cache_at`) and the message is edited through `safe_edit`.
 
 `safe_edit` swallows benign `BadRequest` errors (such as `Message is not modified`) so re-tapping a button that is already in view does not surface a Telegram error to the user.
 
@@ -106,7 +106,7 @@ The cache is invalidated whenever `add_group`, `deactivate_group`, or `migrate_g
 
 - An empty list replies `No groups are currently connected to <community>.` and does not show the toggle keyboard.
 - A group with a missing `title` renders as `Unknown`.
-- The cached list in `ctx.user_data["groups_cache"]` becomes stale after a `/tcconnect` or `/tcdisconnect` elsewhere in the federation; the toggle callback re-fetches only when the cache is missing entirely. Users who need a fresh list should re-run `/tcgroups`.
+- The cached list in `ctx.user_data["groups_cache"]` expires after `_GROUPS_CACHE_TTL_S` (120 s), so a `/tcconnect` or `/tcdisconnect` elsewhere in the federation becomes visible on the next toggle after the TTL lapses. Users who need a fresh list immediately should re-run `/tcgroups`.
 - `safe_edit` silently swallows `Message is not modified` errors, so re-tapping a button already in view does not raise a Telegram error.
 - The L1+L2 cache backed by `active_groups_cache` short-circuits repeat reads within the TTL; the DB is only queried on cache miss.
 - Disconnected groups (`is_active: False`) are excluded from the list because `active_groups` filters on `is_active: True`.

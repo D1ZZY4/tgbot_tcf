@@ -17,7 +17,7 @@ flowchart TD
     Buttons --> Bans[Active bans<br/>batch query]
     Bans --> SearchPanel[Search panel]
     Staff & Users & Chats & Bans --> Detail[Detail callback]
-    Detail --> Profile[Check/profile button]
+    Detail --> Profile[Check hint text]
 ```
 
 ## Purpose
@@ -83,7 +83,7 @@ Developers (n)
 - <mention>
 
 Testers (n)
-- None assigned
+- No staff assigned
 ```
 
 ### Users (`stats_users:<page>` and `stats_user_item:<page>:<idx>[:stable]`)
@@ -101,11 +101,12 @@ Last name: <last_name or ->
 First seen: <utc>
 Last seen: <utc>
 
-Use the Check/profile button for the full profile.
+Use `/check <id>` for the full profile.
 ```
 
-The detail view links to the Check/profile view, equivalent to `/check <id>`,
-so a user can move from identity details to federation history.
+The detail view shows a text hint with the equivalent `/check <id>`
+command (no button), so a user can move from identity details to
+federation history.
 
 ### Connected Chats (`stats_chats:<page>` and `stats_chat_item:<page>:<idx>[:stable]`)
 
@@ -188,7 +189,7 @@ the search and message deletion concurrently.
 ## Edge cases
 
 - A user with no cached profile renders as their numeric user ID (e.g. `123456789`) in every list when no cached name is available. This is the `str(uid)` return from `_best_name()` in `extraction.py`, not the earlier `"User <id>"` pattern.
-- An empty roster ("None assigned") never crashes pagination because the user/chat/ban lists have their own empty-state branch.
+- An empty roster ("- No staff assigned") never crashes pagination because the user/chat/ban lists have their own empty-state branch.
 - Re-tapping the same drill-down does not raise; `safe_edit_cb` swallows the `Message is not modified` `BadRequest`.
 - The search input handler is private-chat only and gated by `SEARCH_KEY`; it never absorbs unrelated group messages.
 - `Stats.clear_search(ctx)` is called whenever the user navigates away from the bans panel so stale results never leak into a new search.

@@ -84,7 +84,7 @@ await Promote.request_admin(
 | `Promote.execute(...)` | Full role-assignment flow used by `/tcpromote` (command + inline button). Routes to `_assign_admin`, `_assign_subrole`, or `request_admin` depending on requested role and executor role. |
 | `Promote.request_admin(...)` | Enqueues an Admin promotion request and notifies the Founder via DM, with the log channel as a fallback. |
 | `Promote._assign_admin(...)` | Founder-only path that upserts `tc_admins`, removes any existing Developer/Tester role, sends the promotion log, and DMs the target. |
-| `Promote._assign_subrole(...)` | Founder/Admin path for Developer/Tester role; removes the previous custom role if any, calls `users_roles.set_role`, sends the promotion log, and DMs the target. |
+| `Promote._assign_subrole(...)` | Founder/Admin path for Developer/Tester role; atomically replaces any previous custom role via `users_roles.set_role` (upsert, no separate remove step), sends the promotion log, and DMs the target. |
 
 ## Permission matrix
 
@@ -105,7 +105,7 @@ The executor's role is enforced by the `@decorators.staff_only` decorator on `cm
 - Admin tries to assign Admin to someone who is already Admin (handled by the rank check above).
 - Promoting a user who is currently Admin into Developer/Tester (must demote first).
 
-The command-level handler `cmd_promote` rejects self-promotion and the bot itself before delegating.
+The command-level handler `cmd_promote` rejects self-promotion, the bot itself, Telegram, and anonymous-admin targets before delegating. Other (third-party) bots are not detected — `extract_target` returns only an ID and name, so they classify as regular users and can be promoted; only staff can trigger this, and the role is removable via `/tcdemote`.
 
 ## Direct Founder promotion to Admin
 
@@ -153,7 +153,7 @@ A user submits a request for themselves to become Admin. `cmd_promote_request` f
 | Cancel | `promo_role_cancel:<target_id>` | `on_promote_role_cancel` |
 | Approve / Reject (Founder DM) | `promo_approve:<request_id>` / `promo_reject:<request_id>` | `on_promo_decision` |
 
-All callbacks re-check the executor's current effective role before applying any write, so a user who lost permission between selecting and confirming is rejected with an alert.
+All callbacks re-check the tapper's current effective role (Founder/Admin) before applying any write, so a user who lost permission between selecting and confirming is rejected with an alert. The check is rank-only: callbacks do not re-run identity refusal or bind the prompt to its originator, so any Founder/Admin who can see the picker can complete it (attributed to the tapper in logs).
 
 ### Approval path
 

@@ -16,7 +16,9 @@ flowchart TD
     NotConn -->|no| Reject2[Reject: not connected]
     NotConn -->|yes| Auth{TC staff or group owner?}
     Auth -->|no| Reject3[Reject: owner or staff]
-    Auth -->|yes| Parallel[deactivate, log, reply, leave in parallel]
+    Auth -->|yes| Deact[deactivate_group first]
+    Deact -->|failed| DbErr[Reply: server error, bot stays]
+    Deact -->|ok| Parallel[log, reply, leave in parallel]
     Parallel --> Done[Group disconnected]
     Rmtc[/rmtc command/] --> Staff{Staff only?}
     Staff -->|no| Reject1R[Reject: insufficient rank]
@@ -60,14 +62,14 @@ Commands use the project's configured prefixes; slash commands are examples.
 6. If the executor is neither TC staff nor the group owner, replies:
    - For anonymous admins: `Anonymous admin mode is active. Please send this command from your personal account, or ask TC Staff to run /rmtc.`
    - Otherwise: `Only the group owner or TC admins can disconnect this group.`
-7. Runs four parallel side-effects via `asyncio.gather(..., return_exceptions=True)`:
-   - `db.groups_db.deactivate_group(chat.id)`.
+7. Deactivates first via `db.groups_db.deactivate_group(chat.id)` and only leaves after the DB confirms; on failure replies `Failed to disconnect the group due to a server error. ...` and stops, so a DB error never leaves a ghost (bot gone, DB still active).
+8. Then runs three parallel side-effects via `asyncio.gather(..., return_exceptions=True)`:
    - `bot.send_message(cfg.logs, group_disconnected_log(chat.id, chat.title or "Unknown", user.id, user.first_name), parse_mode="HTML", message_thread_id=lt)`.
    - `update.effective_message.reply_text("This group has been disconnected from <community>.")`.
    - `bot.leave_chat(chat.id)`.
-8. Each failure is logged at debug or error level but does not roll back the others.
+9. Each failure is logged at debug or error level but does not roll back the others.
 
-The deactivation, log post, reply, and `leave_chat` are independent so they run in parallel for lower perceived latency. The DB write is not gated by `leave_chat` succeeding; even if Telegram refuses to remove the bot, the group is marked disconnected so future fan-outs skip it.
+The deactivation runs before the fan-out (not in parallel with it) precisely to avoid the ghost state above. The DB write is still not gated by `leave_chat` succeeding; even if Telegram refuses to remove the bot, the group is marked disconnected so future fan-outs skip it.
 
 ## `/rmtc` flow
 
@@ -153,7 +155,7 @@ Key behaviors to keep in mind:
 1. `/tcdisconnect` is group-only; private chat replies `replies.ERR_GROUP_ONLY`.
 2. `/tcdisconnect` allows the group owner (creator) or any TC staff (Admin and above).
 3. `/tcdisconnect` runs the three precondition reads in parallel.
-4. The deactivation, log post, reply, and `leave_chat` run in parallel.
+4. The deactivation runs first; only the log post, reply, and `leave_chat` run in parallel after it succeeds.
 5. An anonymous admin cannot run `/tcdisconnect`; the reply directs them to ask TC staff to use `/rmtc`.
 6. `/rmtc` requires TC staff (`staff_only` rejects Developer/Tester/no-role).
 7. `/rmtc` requires a numeric chat ID; the arg must pass `args[0].lstrip("-").isdigit()`.
