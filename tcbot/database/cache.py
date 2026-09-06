@@ -212,8 +212,10 @@ class TwoLevelCache[T]:
         self._redis_prefix: str = redis_prefix
         # * Per-key lock to serialise concurrent fetches for the same key
         # * across L1 + L2 + DB. Mirrors TTLCache.get_or_fetch semantics.
-        # * Cleared in invalidate() and clear() to prevent unbounded growth
-        # * for high-cardinality callers (e.g. member profile lookups).
+        # * Dropped per-fetch in get_or_fetch()'s finally block (plus in
+        # * invalidate()) to prevent unbounded growth for high-cardinality
+        # * callers (e.g. member profile lookups). clear() intentionally
+        # * leaves locks alone: in-flight fetches may still hold them.
         self._locks: dict[Any, asyncio.Lock] = {}
 
     # ── Sync operations (in-memory layer only) ── #
