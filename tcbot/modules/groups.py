@@ -95,7 +95,17 @@ async def cmd_tcfgroups(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if msg is None:
         return
 
-    groups = await db.groups_db.active_groups()
+    try:
+        groups = await db.groups_db.active_groups()
+    except Exception:
+        log.exception("active_groups failed during tcgroups")
+        try:
+            await msg.reply_text(
+                "Could not load the group list due to a server error. Please try again."
+            )
+        except Exception as exc:
+            log.debug("tcgroups groups-failed reply failed: %s", exc)
+        return
     if not groups:
         try:
             await msg.reply_text(f"No groups are currently connected to {_CNAME}.")

@@ -6,6 +6,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Fixed
 
+- **Outage-path reply follow-up** (`tcbot/modules/groups.py`): `cmd_tcfgroups` awaited `active_groups()` unguarded like the broadcast/promote-list paths fixed earlier, crashing the handler on a database outage with no reply. Now catches the failure, logs it, and replies with a server-error message.
+
 - **Stale cache-lock comment** (`tcbot/database/cache.py`): the `TwoLevelCache._locks` comment claimed locks are cleared in `clear()`, but `clear()` only clears the L1 store (locks are dropped per-fetch in `get_or_fetch()`'s `finally` plus in `invalidate()`). Comment corrected; no behavior change (verified the hot path never accumulates locks).
 
 - **Info-panel crash hardening** (`tcbot/modules/start.py`, `stats.py`, `helper/workflows/stats_flow.py`): the start-menu empty-groups branch answered the callback twice (second answer always raised `BadRequest`) and rendered via an undefined `msg` name, so the empty state never displayed at all; it now edits in place like the list branch. `Stats.open_search` cast `q.message` blindly (`AttributeError` on message-less callbacks); it now renders the prompt without storing card IDs so later input degrades gracefully. `on_bans_search_input` asserted `effective_message` non-None; now a guarded early return (search state was already popped, so nothing leaks).
