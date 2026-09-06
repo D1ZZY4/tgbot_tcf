@@ -41,6 +41,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Fixed
 
+- **Outage replies distinguish server errors from denials** (`tcbot/modules/disconnecting.py`, `tcbot/modules/admins.py`): `cmd_tcdisconnect` answered a DB outage with "not connected" and the promo-decision callback answered with "founder only" — both misreport transient failures as definitive verdicts. Lookup exceptions now get distinct retry replies; denial texts only fire on proven verdicts.
+
 - **Secret-scrub hardening on error paths** (`tcbot/utils/error_reporter.py`, `tcbot/__main__.py`): the URI-auth pattern required a username, so `redis://:password@host` echoes shipped verbatim (verified before/after at runtime; bare hosts and ports unaffected). New public `scrub_text` also covers the console error context, and the raw `Update` repr was replaced by its numeric ID. Markers are idempotent under re-scrub.
 
 - **About page no longer double-escapes the community name** (`tcbot/modules/about.py`): `_CNAME` was pre-escaped then passed through `bold()`/`italic()` (which escape), rendering `&amp;` for names with `&<>"'`. The constant is now raw with escaping at each use site (verified the other raw interpolations stay escaped).

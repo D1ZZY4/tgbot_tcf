@@ -934,7 +934,14 @@ async def on_promo_decision(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
         q.answer(),
         return_exceptions=True,
     )
-    if isinstance(is_owner, BaseException) or not is_owner:
+    if isinstance(is_owner, BaseException):
+        log.warning("on_promo_decision owner check failed: %s", is_owner)
+        try:
+            await q.edit_message_text(_ERR_ROLE_LOOKUP_FAILED, reply_markup=None)
+        except Exception as exc:
+            log.debug("on_promo_decision lookup-fail edit failed: %s", exc)
+        return
+    if not is_owner:
         try:
             await q.edit_message_text(replies.PERM_FOUNDER_ONLY)
         except Exception as exc:

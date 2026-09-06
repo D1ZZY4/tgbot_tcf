@@ -95,8 +95,8 @@ async def cmd_tcdisconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     """Request to disconnect the current group from the federation.
 
     Group-only command. Confirms the group is connected, checks staff status
-    and group admin membership in parallel (bounded Telegram call), then posts
-    a confirmation card to the main group for founder approval.
+    and group admin membership in parallel (bounded Telegram call), then
+    deactivates the group record first and leaves the chat.
     """
     chat = update.effective_chat
     user = update.effective_user
@@ -133,7 +133,17 @@ async def cmd_tcdisconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         ),
         return_exceptions=True,
     )
-    if isinstance(is_connected, BaseException) or not is_connected:
+    if isinstance(is_connected, BaseException):
+        log.warning("is_connected check failed for chat=%d: %s", chat.id, is_connected)
+        try:
+            await update.effective_message.reply_text(
+                "Could not verify the group status due to a server error. "
+                "Please try again."
+            )
+        except Exception as exc:
+            log.debug("cmd_tcleave status-check-failed reply failed: %s", exc)
+        return
+    if not is_connected:
         try:
             await update.effective_message.reply_text(
                 f"This group is not connected to {cfg.community_name}."
