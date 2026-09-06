@@ -64,6 +64,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Fixed
 
+- **Broadcast plaintext retry only on HTML parse failures** (`tcbot/modules/broadcasting.py`): every `BadRequest` triggered a plaintext retry, so dead groups and demoted-bot refusals each cost a second Telegram call that could only fail again. Non-parse errors now propagate straight to the per-group failure count; operator-visible success/failure totals unchanged.
+
 - **Runner log artifacts scrubbed of credentials** (`.github/workflows/run-bot.yml`, `docs/operations/ci-cd.md`): `bot.log` shipped as a public artifact (and its crash tail printed to the console) with no redaction, while error paths can echo credential-shaped strings. Token-shaped and URI-auth substrings are now stripped with the `error_reporter.py` patterns before either surface; the artifact uploads the scrubbed copy only. Message excerpts remain by design for crash debugging.
 
 - **Unmute/unban answer group-fetch and executor outages** (`tcbot/modules/helper/workflows/muting_flow.py`, `tcbot/modules/unbanning.py`, `docs/features/moderation/muting.md`, `unbanning.md`): `execute_unmute` awaited `active_groups()` unguarded, so a groups-fetch outage skipped the unmute with no reply while the active record stayed (same silent-crash class as the warn/mute executor hardening). It now replies with a retry notice and returns with the record untouched, and the `effective_user` check moved before the fan-out so no path restricts chats without clearing state and logging. `cmd_unban` logged `execute_unban` failures without replying, so a record re-fetch outage after a failed pre-fetch ended silently; it now replies with the same retry notice.

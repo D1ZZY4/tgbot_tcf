@@ -136,7 +136,13 @@ async def cmd_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         elif broadcast_text:
             try:
                 await ctx.bot.send_message(chat_id, broadcast_text, parse_mode="HTML")
-            except BadRequest:
+            except BadRequest as exc:
+                # * Retry as plain text only for HTML parse failures. Any
+                # * other BadRequest (chat gone, bot demoted) would fail the
+                # * retry identically, so re-raise to avoid doubling Telegram
+                # * calls on every dead group in the federation.
+                if "can't parse entities" not in str(exc).lower():
+                    raise
                 log.info(
                     "Broadcast HTML rejected in chat=%d; retrying as plain text",
                     chat_id,
