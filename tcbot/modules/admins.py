@@ -1,6 +1,6 @@
 # © Copyright 2024 - 2026 Transsion Core
 # © Copyright 2024 - 2026 Dizzy
-# © Copyright 2026 Ave Studio
+# © Copyright 2026 Ave Labs
 
 """Admin management handlers: promote, demote, transfer ownership, and manage requests."""
 
@@ -732,10 +732,15 @@ async def cmd_transfer(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     # * Refresh the in-process error_reporter owner so subsequent infra
     # * errors go to the new owner via DM instead of the old one.
     error_reporter.set_owner(target_id)
+    # * Non-fatal but must not be silent: set_owner already committed, so a
+    # * failed add_admin would leave the old Founder role-less behind a
+    # * success reply. Flag it and say so in the reply instead.
+    prev_owner_admin_ok = True
     try:
         await db.users_roles.add_admin(current_owner.id, current_owner.id)
-    except Exception as exc:
-        log.warning("cmd_transfer add_admin failed after set_owner: %s", exc)
+    except Exception:
+        prev_owner_admin_ok = False
+        log.exception("cmd_transfer add_admin failed after set_owner")
     lc, lt = cfg.logs
     log_text = parse_logmsg.ownership_transferred(
         target_id,
@@ -743,12 +748,21 @@ async def cmd_transfer(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         current_owner.id,
         current_owner.first_name or "unknown",
     )
+    transfer_note = (
+        f"Done. Ownership has been transferred to "
+        f"{user_ref(target_id, target_fname or str(target_id), target_uname)}."
+    )
+    if not prev_owner_admin_ok:
+        transfer_note += (
+            f" WARNING: {user_ref(current_owner.id, current_owner.first_name or 'unknown')} "
+            "could not be kept as Admin due to a server error; grant the role "
+            "manually with /tcpromote if needed."
+        )
     # * log and reply in parallel
     transfer_log_r, transfer_reply_r = await asyncio.gather(
         ctx.bot.send_message(lc, log_text, parse_mode="HTML", message_thread_id=lt),
         msg.reply_text(
-            f"Done. Ownership has been transferred to "
-            f"{user_ref(target_id, target_fname or str(target_id), target_uname)}.",
+            transfer_note,
             parse_mode="HTML",
         ),
         return_exceptions=True,
@@ -802,10 +816,23 @@ async def cmd_promote_request(update: Update, ctx: ContextTypes.DEFAULT_TYPE) ->
         db.queues_db.get_request(user.id),
         return_exceptions=True,
     )
-    if isinstance(existing_role, BaseException):
-        existing_role = None
-    if isinstance(existing, BaseException):
-        existing = None
+    # * Fail closed like cmd_promote/cmd_demote: a role-lookup outage must not
+    # * green-light a request from an already-staff user or duplicate the queue.
+    for _lookup in (existing_role, existing):
+        if isinstance(_lookup, asyncio.CancelledError):
+            raise _lookup
+    if isinstance(existing_role, BaseException) or isinstance(existing, BaseException):
+        log.warning(
+            "cmd_promote_request lookup failed for user=%d: role=%s request=%s",
+            user.id,
+            existing_role,
+            existing,
+        )
+        try:
+            await msg.reply_text(_ERR_ROLE_LOOKUP_FAILED)
+        except Exception as exc:
+            log.debug("cmd_promote_request lookup-fail reply failed: %s", exc)
+        return
     if existing_role:
         label = db.users_roles.ROLE_LABEL.get(existing_role, existing_role or "unknown")
         label = label.capitalize()
@@ -941,29 +968,43 @@ async def on_promo_decision(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
     lc, lt = cfg.logs
 
     if action == "promo_approve":
-        # * DB writes in parallel; the atomic resolve decides the winner.
-        # * A lost race (or any write failure) must not show "Approved".
-        db_add_r, db_resolve_r = await asyncio.gather(
-            db.users_roles.add_admin(target_id, admin.id),
-            db.queues_db.resolve(request_id, "approved", admin.id),
-            return_exceptions=True,
-        )
-        if isinstance(db_add_r, BaseException):
-            log.error(
-                "add_admin failed for %d (request %s): %s",
+        # * Sequential, not parallel: add_admin first so any failure leaves the
+        # * request pending and retryable. The old parallel form could resolve
+        # * "approved" while add_admin failed, orphaning the user (role never
+        # * granted, retry rejected as already-resolved). add_admin is an
+        # * idempotent upsert, so a retry after a resolve failure still
+        # * converges; the atomic resolve still decides a concurrent race.
+        try:
+            await db.users_roles.add_admin(target_id, admin.id)
+        except Exception:
+            log.exception(
+                "add_admin failed for %d (request %s)",
                 target_id,
                 request_id,
-                db_add_r,
             )
-        if isinstance(db_resolve_r, BaseException):
-            log.error(
-                "resolve(approved) failed for request %s: %s", request_id, db_resolve_r
-            )
-        if (
-            isinstance(db_add_r, BaseException)
-            or isinstance(db_resolve_r, BaseException)
-            or db_resolve_r is False
-        ):
+            try:
+                await q.edit_message_text(
+                    "Couldn't approve the request due to a server error. "
+                    "Please try again.",
+                    reply_markup=None,
+                )
+            except Exception as exc:
+                log.debug("promo_approve db-fail edit failed: %s", exc)
+            return
+        try:
+            db_resolve_r = await db.queues_db.resolve(request_id, "approved", admin.id)
+        except Exception:
+            log.exception("resolve(approved) failed for request %s", request_id)
+            try:
+                await q.edit_message_text(
+                    "Couldn't approve the request due to a server error. "
+                    "Please try again.",
+                    reply_markup=None,
+                )
+            except Exception as exc:
+                log.debug("promo_approve db-fail edit failed: %s", exc)
+            return
+        if db_resolve_r is False:
             try:
                 await q.edit_message_text(
                     "Couldn't approve the request due to a server error. "
