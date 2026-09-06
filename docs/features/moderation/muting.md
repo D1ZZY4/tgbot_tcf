@@ -244,6 +244,7 @@ The reply and federation log use `keyboards.action_proof_kb(target_id, proof_lin
 - Auto-demote failure aborts the mute before the reason prompt; previously the failure was swallowed and the mute proceeded anyway.
 - `execute_unmute` with no active mute record replies `<user> has no active federation mute.` and does not fan `restrict_chat_member` across the groups.
 - A failed active-mute read fails closed with a retry notice instead of being treated as "no active mute".
+- A failed group-list fetch inside `execute_unmute` aborts with the same retry notice before any group is touched, so the active record stays and a retry works; the unmute never ends silently.
 - `get_active_mute` filters out expired timed mutes at query time, so a stale `active_mutes` row never produces a misleading "restored N/N groups" success.
 - The `_UNMUTE_CMDS` filter is passed to the mute conversation factory as `escape_filter`, so `/tcunmute` typed during `WAITING_REASON` or `WAITING_PROOF` reaches the unmute handler instead of cancelling the mute conversation.
 - `restrict_chat_member` with `until_date=None` produces a permanent restriction on Telegram's side; the bot does not schedule a timed unban through APScheduler.

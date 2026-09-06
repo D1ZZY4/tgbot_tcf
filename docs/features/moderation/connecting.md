@@ -73,7 +73,7 @@ When the bot joins a group, PTB emits a `my_chat_member` update. `connection.on_
 
 - **Bot removed** (`LEFT` / `BANNED`): runs `is_connected`, `deactivate_group`, and `remove_pending` in parallel. If the group was previously connected, posts a `group_bot_removed_log` and deactivates the record.
 - **Bot demoted** (`MEMBER` or `RESTRICTED` from `ADMINISTRATOR`): the group is *not* deactivated because permissions may be restored shortly. A warning is posted to `cfg.logs` (except for the primary groups `cfg.main_group` and `cfg.exec_group`, which are managed separately). Federation bans cannot be enforced until admin rights are restored.
-- **Bot promoted to admin with a pending request**: runs `complete_join` first and only then edits the prompt to `connected_message`. The pending entry is consumed. (Editing optimistically in parallel was a bug: a `complete_join` failure left the owner with a false confirmation while the group stayed absent from `federated_groups`.)
+- **Bot promoted to admin with a pending request**: edits the prompt to a progress state first (buttons removed), then runs `complete_join`, and only then edits the prompt to `connected_message`. The pending entry is consumed. (Editing optimistically in parallel was a bug: a `complete_join` failure left the owner with a false confirmation while the group stayed absent from `federated_groups`.) The progress edit matters because the ban/mute replay inside `complete_join` can take minutes on large federations; without it the owner stares at a dead prompt, and the removed buttons close the double-tap window.
 - **Bot added to a group with no pending request**: posts `connection.join_prompt()` with `Connect` / `Cancel` buttons and writes a `pending_joins` entry via `db.groups_db.add_pending(chat.id, chat.title, by_user.id, prompt.message_id)`. Anonymous-admin adds are skipped because there is no `from_user` to record as owner.
 
 ## `on_join_decision` callback flow
@@ -86,9 +86,9 @@ The `Connect` / `Cancel` buttons are handled by `connection.on_join_decision`:
 4. For `tc_join`:
    - Fetch `bot.get_chat_member(chat.id, bot.id)` bounded with `asyncio.wait_for(timeout=3.0)`. On failure, edit the prompt to `_ERR_BOT_PERMS_VERIFY` and stop.
    - If `connection.check_perms(bot_member)` returns False, write `db.groups_db.add_pending(...)` first (reporting `_ERR_COMPLETE_JOIN` if the write fails, since there is nothing to approve later), then edit the prompt to `connection.perms_required_message()`; the pending entry persists so the owner can retry once the bot is promoted correctly.
-   - If `db.groups_db.is_connected(chat.id)` is true, edit the prompt to `connection.already_connected_message()` and stop.
-   - Call `connection.complete_join(...)`. If it raises, edit the prompt to `_ERR_COMPLETE_JOIN` and stop. The success message is intentionally not edited into the prompt until `complete_join` returns successfully, so a DB failure does not produce a false "connected" confirmation.
-   - Edit the prompt to `connection.connected_message()`.
+    - If `db.groups_db.is_connected(chat.id)` is true, edit the prompt to `connection.already_connected_message()` and stop.
+    - Edit the prompt to a progress state (buttons removed), then call `connection.complete_join(...)`. If it raises, edit the prompt to `_ERR_COMPLETE_JOIN` and stop. The success message is intentionally not edited into the prompt until `complete_join` returns successfully, so a DB failure does not produce a false "connected" confirmation. The progress edit keeps the owner informed during the ban/mute replay and closes the double-tap window.
+    - Edit the prompt to `connection.connected_message()`.
 5. For `tc_cancel`: remove the pending row first (a surviving row would deadlock the next `on_bot_added` join), then edit the prompt to `connection.declined_message()`, post `group_connection_rejected_log` to `cfg.logs`, and `leave_chat(chat.id)` in parallel.
 
 ## `complete_join` behavior

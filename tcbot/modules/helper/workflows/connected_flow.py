@@ -137,6 +137,18 @@ class BuildConnection:
         """Shown when the group is already part of the federation."""
         return f"This group is already connected to {self.community_name}."
 
+    def connecting_message(self) -> str:
+        """Progress state edited into the prompt before the ban/mute replay.
+
+        The replay fans every active ban/mute into the new group, which
+        takes minutes on large federations; without this the owner stares
+        at a dead prompt with live buttons for the whole duration.
+        """
+        return (
+            "Connecting... applying existing federation bans and mutes. "
+            "This can take a moment for large federations."
+        )
+
     def perms_required_message(self) -> str:
         """Shown when the bot lacks the required admin permissions."""
         return (
@@ -391,6 +403,17 @@ class BuildConnection:
                     # * in parallel was a bug: a complete_join failure would
                     # * leave the owner with a false confirmation while the
                     # * group remained absent from federated_groups.
+                    # * Show progress first: the replay below can take
+                    # * minutes on large federations. Stripping the buttons
+                    # * also closes the double-tap window. Best-effort: the
+                    # * final edit still lands when this one fails.
+                    with contextlib.suppress(Exception):
+                        await ctx.bot.edit_message_text(
+                            self.connecting_message(),
+                            chat_id=chat.id,
+                            message_id=pending.get("message_id", 0),
+                            reply_markup=None,
+                        )
                     try:
                         await self.complete_join(
                             chat.id,
@@ -547,6 +570,11 @@ class BuildConnection:
             # * complete_join must succeed before showing the success message.
             # * Running both in a gather was a bug: if complete_join raised, the group
             # * was never persisted but the owner saw "connected" anyway.
+            # * Show progress first (same rationale as the on_bot_added path
+            # * above): the ban/mute replay can take minutes, and stripping
+            # * the buttons closes the double-tap window.
+            with contextlib.suppress(Exception):
+                await q.edit_message_text(self.connecting_message(), reply_markup=None)
             try:
                 await self.complete_join(
                     chat.id, chat.title or "", user.id, user.first_name, ctx.bot

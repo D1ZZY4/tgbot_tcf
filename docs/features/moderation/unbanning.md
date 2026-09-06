@@ -134,7 +134,7 @@ There is no appeal-resolution field on the manual unban log. When `/tcunban` is 
 - An unban attempt with no active ban record replies `<user> has no active federation ban.` and does not fan `unban_chat_member` calls.
 - `deactivate_all_active_bans` clears every active ban, not just the one returned by `get_active_ban`; duplicate active records (which can exist from earlier race conditions or re-ban paths) are suppressed in one operation.
 - `unban_chat_member` is called with `only_if_banned=True`, so it is a no-op in groups where the user is not currently banned.
-- The pre-fetch in `cmd_unban` can fail (DB error); the executor falls back to its own `get_active_ban` call.
+- The pre-fetch in `cmd_unban` can fail (DB error); the executor falls back to its own `get_active_ban` call. If that re-fetch also fails, the command replies with a retry notice instead of crashing out with no operator feedback.
 - The Developer rank minimum (`mod_only`) prevents a Tester from unbanning a Founder or Admin; the rank check fires before the active-ban pre-fetch.
 - The unban command does not edit the appeal review card; only the ban record is deactivated.
 - `cancel_schedule(f"unban.{ban_id}")` is defensive and currently always a no-op.

@@ -145,6 +145,23 @@ async def extract_target(
         # * Priority 2a: Numeric ID
         if arg.lstrip("-").isdigit():
             uid = int(arg)
+            # * Fast path: IDs are immutable, so a cached identity is
+            # * authoritative for resolution and the live get_chat round
+            # * trip (a full _GET_CHAT_TIMEOUT on a blip) can be skipped.
+            # * Only real cached names count: bare-numeric and legacy
+            # * "User <id>" fallbacks fall through to the live lookup,
+            # * exactly like the outage path below already does.
+            try:
+                cached_name = await db.users_cache.get_first_name(uid, "")
+            except Exception as exc:
+                log.debug("numeric fast-path cache read failed for %d: %s", uid, exc)
+                cached_name = ""
+            if (
+                cached_name
+                and not cached_name.lstrip("-").isdigit()
+                and not cached_name.startswith("User ")
+            ):
+                return uid, cached_name
             chat_first: str | None = None
             chat_username: str | None = None
             if bot:

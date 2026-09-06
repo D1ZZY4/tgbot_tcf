@@ -332,7 +332,8 @@ async def execute_unmute(
     record exists, mirroring the ``get_active_ban`` guard in ``execute_unban``.
     """
     msg = update.effective_message
-    if msg is None:
+    admin = update.effective_user
+    if msg is None or admin is None:
         return
 
     # * Guard: only proceed if an active mute record exists.
@@ -370,8 +371,19 @@ async def execute_unmute(
         can_pin_messages=False,
     )
 
+    # * Fail closed like _execute_mute: a groups-fetch outage aborts before
+    # * anything is touched, so the active record stays and a retry works.
+    # * Letting the exception propagate would skip the unmute with no reply.
+    try:
+        groups = await db.groups_db.active_groups()
+    except Exception:
+        log.exception("active_groups failed during unmute of %d", target_id)
+        try:
+            await msg.reply_text(_ERR_DB_RETRY)
+        except Exception as exc:
+            log.debug("execute_unmute groups-fail reply failed: %s", exc)
+        return
     # * Unrestrict across all connected groups + primary groups - semaphore-bounded
-    groups = await db.groups_db.active_groups()
     _pri_ids = [cid for cid in (cfg.main_group, cfg.exec_group) if cid]
     _ex_ids = {cid for cid in (grp.get("chat_id") for grp in groups) if cid}
     groups = groups + [
@@ -396,9 +408,6 @@ async def execute_unmute(
             target_id,
         )
 
-    admin = update.effective_user
-    if admin is None:
-        return
     lc, lt = cfg.logs
     log_text = parse_logmsg.unmute_log(
         target_id,

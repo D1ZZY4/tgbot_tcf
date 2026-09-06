@@ -202,7 +202,17 @@ async def cmd_unban(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             pre_ban=cast("BanDoc | None", pre_ban),
         )
     except Exception:
+        # * Fail closed with a retry reply instead of crashing out silently:
+        # * the re-fetch inside execute_unban is unguarded when the
+        # * speculative pre-fetch above failed, so an outage would
+        # * otherwise end with no operator feedback.
         log.exception("execute_unban failed for target=%s", target_id)
+        try:
+            await msg.reply_text(
+                "I couldn't reach the database right now. Please try again in a moment."
+            )
+        except Exception as exc:
+            log.debug("unban DB-fail reply failed: %s", exc)
 
 
 # ──────────────────────────── Handlers ──────────────────────────── #
