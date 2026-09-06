@@ -40,6 +40,10 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 - **Bounded batch-join handling** (`tcbot/modules/greeting.py`): `on_new_member` processes invite-link batches through a semaphore (10 concurrent) instead of unbounded `gather`, bounding MongoDB pool pressure and Telegram bursts. Per-member failures stay isolated via `return_exceptions=True`.
 
+- **Shared group-list outage reply** (`tcbot/modules/helper/replies.py`, `broadcasting.py`, `maintenance.py`, `groups.py`): the identical "Could not load the group list..." retry text lived inline in three modules; now a single `replies.ERR_GROUPS_LOAD_FAILED` constant. No text change.
+
+- **Modern typing and warning hygiene** (`tcbot/serverless.py`, `tcbot/utils/pagination.py`, `tcbot/alive.py`, `tcbot/modules/netspeed.py`): `serverless.run` is generic over the coroutine result type and `paginate` is generic over the item type (both PEP 695, verified: pyright 0 errors); the webhook enqueue path closes an unscheduled coroutine instead of leaking a never-awaited warning; the duplicated speedtest parse-failure blocks share one responder. No behavior change.
+
 ### Documentation
 
 - **Ban doc sync** (`docs/features/moderation/banning.md`, `docs/features/workflow-overview.md`, `docs/architecture/workflows.md`, `docs/features/moderation/unbanning.md`): `banning.md` and `workflow-overview.md` mermaids showed fan-out before the log write while the code writes the `bans` record and posts the log in parallel before `fan_out()`; both diagrams now show store-plus-log then fan-out then summary/DM. `banning.md` documents the reply-reason rule and the database fail-closed path. `workflows.md` ban paragraph documents the `(log_msg_id, db_ok)` return and abort-before-fan-out. `unbanning.md` drops the stale `unban_flow.py:30-146` line range.
@@ -63,6 +67,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 - **Response-path doc sync** (`docs/features/moderation/connecting.md`, `docs/architecture/helpers.md`): `connecting.md` documents the pre-replay progress edit on both connect paths; `helpers.md` notes the numeric-ID cache fast path in `extract_target`.
 
 ### Fixed
+
+- **Precise `BanDoc` typing for ban-detail rendering** (`tcbot/modules/helper/ban_info.py`, `checking.py`, `helper/workflows/check_flow.py`, `stats_flow.py`): `build_ban_detail` and `_ban_summary` took untyped `dict`, forcing five `cast("dict...")` workarounds at call sites while the real `pyright tcbot/` suite stayed red (5 errors: `ban['ban_id']` on total=False `BanDoc`, `BanDoc` vs `dict` param). Both functions now take `BanDoc` with total=False-safe `.get()` access, all casts are removed, search results are typed `list[BanDoc]`, and the full suite is green. Behavior is identical for complete records; sparse records now render with display fallbacks instead of raising `KeyError`.
 
 - **Broadcast plaintext retry only on HTML parse failures** (`tcbot/modules/broadcasting.py`): every `BadRequest` triggered a plaintext retry, so dead groups and demoted-bot refusals each cost a second Telegram call that could only fail again. Non-parse errors now propagate straight to the per-group failure count; operator-visible success/failure totals unchanged.
 
@@ -177,6 +183,22 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 - **MongoDB TLS pins the certifi CA bundle** (`tcbot/database/mongos.py`, `pyproject.toml`, `uv.lock`): startup crashed with `CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate` on hosts whose system CA store is empty or outdated (verified: 2 entries in `/etc/ssl/certs`, no `cert.pem`). The Motor client now passes `tlsCAFile=certifi.where()` (new direct dependency), proven end-to-end with a live TLS handshake plus `hello ok: 1.0` against the Atlas shard using the bundle while the system store fails identically to the crash. An explicit `tlsCAFile` in `MONGODB_URI` always wins; non-TLS schemes ignore the option. Verification is never disabled.
 
 - **Duplicate active_mutes index crashed startup** (`tcbot/database/mongos.py`, `docs/architecture/database.md`): the retired plain `(until_date)` index and the TTL variant auto-name to the same `until_date_1`, so `ensure_indexes()` failed with `IndexOptionsConflict` (code 85) on any database holding one variant, and the fail-fast re-raise aborted startup before serving traffic (production fatal). The plain index is removed (the TTL index serves the same expiry-filtered reads) and a sequential pre-step drops a legacy non-TTL `until_date_1` left by pre-TTL releases, so TTL-present, plain-only, and fresh databases all start cleanly. Verified by spec review (three states traced) plus the standard suite; no live MongoDB available here to execute the startup path.
+
+- **Promote/demote answer executor outages** (`tcbot/modules/admins.py`): `cmd_promote` and `cmd_demote` coerced an executor role-lookup failure to `None` and returned silently, so a transient outage between the `staff_only` check and the re-read ended the command with no reply. Lookup exceptions now get the existing retry reply; a genuinely role-less caller (revoked in the gap) still returns silently and is denied by the decorator on retry.
+
+- **Promotion pre-check survives read blips** (`tcbot/modules/helper/workflows/promote_flow.py`): `request_admin` awaited the duplicate pre-check unguarded, so a transient read failure crashed the request command with no reply. The pre-check now falls through to the guarded enqueue on failure, where the partial-unique pending index still reports a lost race as "already pending".
+
+- **Group-list views never render empty from failed reads** (`tcbot/modules/groups.py`, `tcbot/modules/start.py`, `docs/features/moderation/groups.md`): the `/tcgroups` toggle and the start-menu list coerced a groups-fetch failure to `[]`, rendering "Count: 0" / "No groups connected" during an outage. Both now edit a retry notice with the keyboard kept so re-tapping retries; docs updated.
+
+- **Checkme never renders clean verdicts from failed reads** (`tcbot/modules/checking.py`, `docs/features/moderation/check.md`): a ban-lookup failure was coerced to `None`, telling a possibly banned user "You're clean"; detail/back re-read failures clobbered the live card with "inactive" / "not found". The command now replies retry, and the callbacks answer a retry popup (mirroring the appeal-review outage path) while preserving the card and its appeal button; docs updated.
+
+- **Unban/approve fetch groups before deactivating** (`tcbot/modules/helper/workflows/unban_flow.py`, `appeal_flow.py`, `docs/features/moderation/unbanning.md`, `docs/features/appeals.md`): both fanned the group list and the deactivation in one gather, so a groups-fetch failure with a committed deactivation left chats unbanned-nowhere with no record to retry from (the next unban reports "no active ban"). The list now loads first and aborts untouched on failure (record intact, review card preserved, tapper alerted); docs updated.
+
+- **Warn auto-ban reports reduced scope honestly** (`tcbot/modules/helper/workflows/warning_flow.py`, `docs/features/moderation/warnings.md`): a groups-fetch failure silently shrank enforcement while the reply claimed full success ("Applied to 3/3"). The failure is now error-logged and the reply gains a reduced-scope WARNING suffix pointing at manual `/tcban`; docs updated.
+
+- **TypedDict-strict ban ID reads** (`tcbot/modules/helper/workflows/check_flow.py`, `stats_flow.py`): newer pyright flags `ban['ban_id']` on the `total=False` `BanDoc` (pre-existing tree-wide failure). List renderers read via `.get` with an empty fallback and the stats detail path uses the `checking.py` cast pattern. Rendering identical; tree back to 0 errors.
+
+- **Moderation entries preserve task cancellation** (`tcbot/modules/banning.py`, `kicking.py`, `muting.py`, `warnings.py`, `unbanning.py`): the entry `gather(return_exceptions=True)` blocks treated `CancelledError` like any DB error (`isinstance(x, BaseException)`), silently ending the conversation on shutdown or timeout-scope cancellation instead of propagating. Every site now re-raises `CancelledError` first (matching the existing `admins.py`/decorator/database pattern); only genuine failures still end the handler. No success-path change.
 
 </details>
 

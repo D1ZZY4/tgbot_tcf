@@ -134,6 +134,10 @@ async def cmd_ban_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         resolve_and_check(msg, admin.id, target_id, min_role="developer"),
         return_exceptions=True,
     )
+    if isinstance(ident, asyncio.CancelledError):
+        raise ident
+    if isinstance(role_result, asyncio.CancelledError):
+        raise role_result
     if isinstance(ident, BaseException):
         log.exception("identity.classify failed in cmd_ban_start: %s", ident)
         return ConversationHandler.END

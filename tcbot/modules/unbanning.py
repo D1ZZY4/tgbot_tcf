@@ -112,6 +112,12 @@ async def cmd_unban(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         resolve_and_check(msg, admin.id, target_id, min_role="developer"),
         return_exceptions=True,
     )
+    if isinstance(ident, asyncio.CancelledError):
+        raise ident
+    if isinstance(pre_ban, asyncio.CancelledError):
+        raise pre_ban
+    if isinstance(role_result, asyncio.CancelledError):
+        raise role_result
     if isinstance(ident, BaseException):
         log.exception("identity.classify failed in cmd_unban: %s", ident)
         return
