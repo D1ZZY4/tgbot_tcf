@@ -222,6 +222,13 @@ def _register_periodic_schedules(
             id=_WARN_EXPIRY_SCHEDULE_ID,
             args=[warn_expiry_days],
             replace_existing=True,
+            # * A restart straddling the daily fire must still run expiry:
+            # * the default 1s misfire window would silently drop that day's
+            # * run (same defect class as the scheduled-unban fix, which uses
+            # * 3600s). One coalesced late run per missed day is the correct
+            # * daily semantics; 24h covers extended outages.
+            misfire_grace_time=86400,
+            coalesce=True,
         )
         log.info("Scheduled warn expiry: every 24h, expiry_days=%d.", warn_expiry_days)
     else:
