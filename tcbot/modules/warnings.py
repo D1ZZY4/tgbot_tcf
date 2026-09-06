@@ -62,7 +62,7 @@ __help_sections__: list[tuple[str, str]] = [
     ),
     replies.who_section(
         f"{bold('/tcwarn')}, {bold('/tcunwarn')}, {bold('/resetwarns')}: Tester and above.\n"
-        f"{bold('/warns')}: anyone."
+        f"{bold('/warns')}: Tester and above."
     ),
     replies.where_section(replies.WHERE_CONNECTED_GROUP),
     (

@@ -1,6 +1,6 @@
 # Muting
 
-This document describes the current federation mute and unmute behavior implemented by `tcbot/modules/muting.py` (the `/tcmute` and `/tcunmute` entry points), `tcbot/modules/helper/workflows/muting_flow.py` (the `execute_mute` and `execute_unmute` executors plus duration helpers), `tcbot/modules/helper/workflows/reason_flow.py` (the shared proof/reof conversation), and `tcbot/database/mutes_db.py` (the persistent `mutes` and `active_mutes` collections).
+This document describes the current federation mute and unmute behavior implemented by `tcbot/modules/muting.py` (the `/tcmute` and `/tcunmute` entry points), `tcbot/modules/helper/workflows/muting_flow.py` (the `execute_mute` and `execute_unmute` executors plus duration helpers), `tcbot/modules/helper/workflows/reason_flow.py` (the shared proof/reason conversation), and `tcbot/database/mutes_db.py` (the persistent `mutes` and `active_mutes` collections).
 
 For the ban flow, see [`banning.md`](banning.md). For the kick flow, see
 [`kicking.md`](kicking.md). For role auto-demotion on mute, see
@@ -143,7 +143,7 @@ If the target holds a federation role, `cmd_mute` calls `Demote.execute(ctx.bot,
 
 ```text
 <target> holds a federation role (<role>) and the auto-demote step failed,
-so the mute cannot proceed safely. Demote them manually with /tcdemote andretry the mute.
+so the mute cannot proceed safely. Demote them manually with /tcdemote and retry the mute.
 ```
 
 The mute is not attempted in this case; previously this exception was swallowed silently and the mute would still proceed on a role-holding target.
@@ -156,7 +156,7 @@ Execution order:
 
 1. Build the active-groups list: `groups_db.active_groups()` plus any primary groups (`cfg.main_group`, `cfg.exec_group`) that are not already present.
 2. Build the restriction `ChatPermissions(can_send_messages=False)` and the `until_date` value (`utc_now() + duration` or `None` for permanent).
-3. Fan `restrict_chat_member` across the group list with `fan_out(...)`. Failed calls are counted with `count_errors(results)`.
+3. Fan `restrict_chat_member` across the group list with `fan_out(...)`. Failed calls are counted with `count_transient_errors(results)`.
 4. Upload proof to `cfg.proofs` when `proof_msgs` is non-empty. The proof caption uses `parse_logmsg.proof_caption_new`. If upload fails, the mute still proceeds with no proof link.
 5. Run four parallel side-effects via `asyncio.gather(..., return_exceptions=True)`:
    - `db.mutes_db.log_mute(target_id, chat_id, reason_text, admin_id, duration_secs=...)`.

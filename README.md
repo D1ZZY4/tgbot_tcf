@@ -10,7 +10,7 @@ TCF Bot is a Telegram federation management bot for the Transsion Core Federatio
 - **Connected groups**: approve group joins, track active groups, and run multi-group actions safely.
 - **Staff roles**: Founder, Admin, Developer, and Tester hierarchy with promotion/demotion workflows.
 - **Moderation actions**: ban, unban, kick, mute, warn, warning reset, checks, stats, and broadcast helpers.
-- **Smart mentions**: every user reference includes a clickable `tg://user?id=...` link. With username: `Name | @username (tg://user?id=ID)`. Without username: `Name (tg://user?id=ID)`. Works in welcome messages, ban/kick/mute/warn logs, check profiles, and all action summaries.
+- **Smart mentions**: every user reference renders the full name as a clickable `tg://user?id=...` link. Works in welcome messages, ban/kick/mute/warn logs, check profiles, and all action summaries.
 - **Flexible target resolution**: reply-first priority with partial name search support for natural command usage.
 - **Audit logging**: moderation, appeal, role, and error reports to configured log destinations.
 - **Health checks**: Flask keep-alive server on `PORT` with `GET /` returning `OK` and `GET /health` returning a JSON subsystem-status report.
@@ -60,7 +60,7 @@ python -m tcbot
 ## Docker Compose
 
 ```bash
-docker-compose up --build
+docker compose up --build
 ```
 
 The compose setup starts the bot plus local `mongo:7` and `redis:7-alpine` services. The bot reads `.env` (copy from `config.env.example`) and waits for both dependencies to pass health checks.

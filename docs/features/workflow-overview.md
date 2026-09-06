@@ -15,7 +15,7 @@ factories, and callback details, see
 | Unmute | `/tcunmute`, `/tcunm`, `/tcum` | Tester+ | All connected groups | Direct command; restores send permissions. |
 | Warn | `/tcwarn`, `/tcw` | Tester+ | Current group warning history | Reason required; auto-ban at `WARN_LIMIT` (default 3) per group or when `FED_WARN_LIMIT` (env, default disabled) is crossed across all groups. |
 | Unwarn | `/tcunwarn`, `/tcunw` | Tester+ | Current group warning history | Removes the newest warning. |
-| Warn list | `/warns`, `/warnlist` | Anyone | Current group warning history | Shows a user's warnings. |
+| Warn list | `/warns`, `/warnlist` | Tester+ | Current group warning history | Shows a user's warnings. |
 | Reset warns | `/resetwarns`, `/clearwarns` | Tester+ | Current group warning history | Clears all warnings for a user in the chat. |
 
 ## Ban flow

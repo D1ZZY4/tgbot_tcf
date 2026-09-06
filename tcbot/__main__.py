@@ -282,7 +282,7 @@ async def _post_init(app: Application) -> None:
     if isinstance(owner_r, BaseException):
         log.warning("ensure_initial_owner failed (non-fatal): %s", owner_r)
 
-    # * APScheduler 4 with MongoDBDataStore - persistent scheduled moderation jobs.
+    # * APScheduler 3.11.3 with MongoDBJobStore - persistent scheduled jobs.
     await sched_mod.start(cfg.mongodb_uri, cfg.db_name, cfg.warn_expiry_days)
 
     # * Pre-warm hot caches (owner ID + active groups) as a background task so

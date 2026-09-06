@@ -40,7 +40,7 @@ The per-group limit is read from the `WARN_LIMIT` environment variable (default 
 |---|---|---|---|
 | `/tcwarn` | `/tcw` | Add a warning in the current group. | Tester and above. |
 | `/tcunwarn` | `/tcunw` | Remove the most recent warning in the current group. | Tester and above via `basic_mod_only`. |
-| `/warns` | `/warnlist` | Show warning count and reasons for a target in the current group. | Anyone. |
+| `/warns` | `/warnlist` | Show warning count and reasons for a target in the current group. | Tester and above via `basic_mod_only`. |
 | `/resetwarns` | `/clearwarns` | Clear all warnings for a target in the current group. | Tester and above via `basic_mod_only`. |
 
 Commands use configured prefixes; slash commands are examples.
