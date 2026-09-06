@@ -102,7 +102,17 @@ async def cmd_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             log.debug("cmd_broadcast no-content reply failed: %s", exc)
         return
 
-    groups = await db.groups_db.active_groups()
+    try:
+        groups = await db.groups_db.active_groups()
+    except Exception:
+        log.exception("active_groups failed during broadcast")
+        try:
+            await msg.reply_text(
+                "Could not load the group list due to a server error. Please try again."
+            )
+        except Exception as exc:
+            log.debug("cmd_broadcast groups-failed reply failed: %s", exc)
+        return
     if not groups:
         try:
             await msg.reply_text(replies.ERR_NO_CONNECTED_GROUPS)

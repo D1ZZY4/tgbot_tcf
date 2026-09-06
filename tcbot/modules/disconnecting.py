@@ -244,7 +244,20 @@ async def cmd_rmtc(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             log.debug("cmd_rmtc primary-group reply failed: %s", exc)
         return
 
-    removed = await db.groups_db.deactivate_group(chat_id)
+    # * Mirror cmd_tcdisconnect: never leave on an unconfirmed DB write,
+    # * and never crash out without a reply on a DB outage.
+    try:
+        removed = await db.groups_db.deactivate_group(chat_id)
+    except Exception:
+        log.exception("deactivate_group failed for chat %d during rmtc", chat_id)
+        try:
+            await msg.reply_text(
+                "Failed to disconnect the group due to a server error. "
+                "Please try again."
+            )
+        except Exception as exc:
+            log.debug("cmd_rmtc deactivate-failed reply failed: %s", exc)
+        return
     if removed:
         lc, lt = cfg.logs
         # * log, leave, and reply all run in parallel

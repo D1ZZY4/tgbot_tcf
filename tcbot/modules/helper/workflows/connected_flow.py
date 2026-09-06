@@ -521,7 +521,16 @@ class BuildConnection:
                     log.debug("Join decision perms-required edit failed: %s", exc)
                 return
 
-            if await db.groups_db.is_connected(chat.id):
+            # * Guarded like every neighbouring DB call: an outage here must
+            # * report the error instead of leaving the prompt hanging.
+            try:
+                already_connected = await db.groups_db.is_connected(chat.id)
+            except Exception:
+                log.exception("is_connected failed for chat %d", chat.id)
+                with contextlib.suppress(Exception):
+                    await q.edit_message_text(_ERR_COMPLETE_JOIN, reply_markup=None)
+                return
+            if already_connected:
                 try:
                     await q.edit_message_text(
                         self.already_connected_message(), reply_markup=None

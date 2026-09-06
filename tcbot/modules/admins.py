@@ -844,7 +844,15 @@ async def cmd_promote_list(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     msg = update.effective_message
     if msg is None:
         return
-    pending = await db.queues_db.all_pending()
+    try:
+        pending = await db.queues_db.all_pending()
+    except Exception:
+        log.exception("all_pending failed during promote_list")
+        try:
+            await msg.reply_text(_ERR_ROLE_LOOKUP_FAILED)
+        except Exception as exc:
+            log.debug("cmd_promote_list db-error reply failed: %s", exc)
+        return
     if not pending:
         try:
             await msg.reply_text(_MSG_NO_PENDING)
