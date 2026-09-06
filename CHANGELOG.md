@@ -51,6 +51,11 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 - **Dead prefix filter** (`tcbot/utils/prefixes.py`): removed `ANY_CMD_FILTER` plus its `_custom_prefixes` / `_get_custom_prefixes()` support. Zero in-tree importers (verified by search); `ALL_PREFIXES_CMD_FILTER` is the live filter used by conversation fallbacks.
 - **Dead check_flow re-export** (`tcbot/modules/helper/workflows/check_flow.py`): removed `build_ban_detail` from `__all__`. The import stays for internal use; all external consumers import from `ban_info` directly (verified by search).
 
+### Documentation
+
+- **Stale version and role references** (`.agents/rules/tooling-validation.md`, `.agents/rules/security-rules.md`, `tcbot/__init__.py`): `tooling-validation.md` cited an `APScheduler 4.0.0a6` integration risk while the lockfile pins `3.11.3`; corrected. `security-rules.md` listed `trigger="ban"|"kick"` while `demote_flow.py` and callers support `"mute"`; corrected. `cfg.proof_timeout` / `cfg.appeal_timeout` docstrings cited an `APScheduler 4` conflict; reworded to the persistent APScheduler setup.
+- **Architecture doc sync** (`docs/architecture/database.md`, `utilities.md`, `repository-map.md`): removed the duplicated `bans unique (ban_id)` index row; fixed the ghost `warning_flow.WARN_LIMIT` reference to `cfg.warn_limit`; fixed the `four public singletons` count to five; documented `is_benign_telegram_error` + `count_transient_errors` alongside `count_errors`; removed the dead `ANY_CMD_FILTER` row; fixed `error_reporter.attach` signature with `owner_id` / `set_owner()`; fixed the `three canonical rule files` count to six.
+
 ## [6.4.0] - 2026-09-05
 
 ### Changed

@@ -60,7 +60,9 @@ The Telegram circuit state (`closed`, `open`, or `half_open`) is exposed in the 
 | Export | Purpose |
 |---|---|
 | `fan_out(coros, max_concurrent=10)` | Run awaitables concurrently up to `max_concurrent` at once; never raises; returns exceptions as list elements. |
-| `count_errors(results)` | Count `BaseException` items in a `fan_out` result list. Replaces the inline `sum(1 for r in results if isinstance(r, BaseException))` pattern. |
+| `count_errors(results)` | Count every `BaseException` item in a `fan_out` result list. Used for non-moderation fan-outs (broadcast, maintenance) where any refusal means "not reached". |
+| `is_benign_telegram_error(exc)` | Return True for known-benign Telegram refusals (user not participant, chat gone, bot demoted). |
+| `count_transient_errors(results)` | Count only non-benign failures. Used by moderation fan-outs (ban, unban, mute, warn auto-ban) so benign refusals do not look like failed groups. |
 
 `fan_out` behavior:
 
@@ -89,7 +91,6 @@ Command prefix support is centralized here.
 |---|---|
 | `build_prefixed_filters(command)` | Builds a PTB message filter matching any configured prefix plus an exact lowercase command. |
 | `parse_cmd_args(text)` | Returns command arguments after the first whitespace. |
-| `ANY_CMD_FILTER` | Matches any custom-prefix command (e.g. `!`, `.`); excludes Telegram-native `/` commands. Used in `__main__.py` member-cache guard. |
 | `ALL_PREFIXES_CMD_FILTER` | Matches any configured prefixed command across all configured prefixes including `/`. Used in `ConversationHandler` fallbacks to catch a new command and cancel the active conversation. |
 
 `PREFIXES` supports a Python-style list such as `["/", "!", "."]` and falls back to common prefixes when unset. Prefix filters are case-sensitive, accept lowercase ASCII command names, and only accept `@BotName` suffixes that target the current bot.
@@ -112,7 +113,7 @@ Error reporting sends structured HTML messages to `LOGS_ERRORS`.
 
 | Export | Purpose |
 |---|---|
-| `attach(bot, chat_id, thread_id)` | Stores the live bot and destination after PTB startup. |
+| `attach(bot, chat_id, thread_id, *, owner_id=0)` | Stores the live bot and destination after PTB startup. `set_owner()` refreshes the owner-DM target after ownership transfer. |
 | `build_error_message(exc=None, record=None, context=None)` | Formats exception or log-record details for Telegram. |
 | `send_to_log_errors(text)` | Sends a prepared message to the error destination. |
 | `report_exc(exc, context=None)` | Reports an exception. |

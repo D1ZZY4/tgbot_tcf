@@ -126,7 +126,7 @@ Before editing TCF Bot code, verify:
 - Keep `pyproject.toml` and `uv.lock` synchronized.
 - Do not add dependencies to `requirements.txt`.
 - Do not change pinned dependencies blindly, especially the accepted
-  APScheduler `4.0.0a6` integration risk.
+  APScheduler `3.11.3` integration risk.
 
 Install dependencies from the lockfile (Replit only):
 

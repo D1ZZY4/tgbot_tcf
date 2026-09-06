@@ -92,7 +92,6 @@ write.
 | Collection | Index |
 |---|---|
 | `bans` | `(banned_user_id, is_active, timestamp desc, ban_id desc)` compound (serves get_active_ban filter+sort), unique `(ban_id)`, `(banned_user_id, appeal_log_msg_id)` sparse, `(is_active, timestamp desc, ban_id desc)` (serves active_bans / active_ban_count), `(banned_user_id, timestamp desc, ban_id desc)` (serves /check ban history) |
-| `bans` | unique `(ban_id)` |
 | `tc_owners` | unique `(user_id)` |
 | `tc_admins` | unique `(user_id)` |
 | `tc_roles` | unique `(user_id)` |
@@ -168,8 +167,9 @@ Warnings are stored per user and chat:
 
 - `warns` stores each warning event.
 - `warn_counts` stores a counter document for fast limit checks with `unique (user_id, chat_id)` index.
-- `warning_flow.WARN_LIMIT` is currently `3`. A second threshold
-  `FED_WARN_LIMIT` (env var `FED_WARN_LIMIT`, default 0 = disabled) triggers
+- `cfg.warn_limit` (env var `WARN_LIMIT`, default 3, minimum 1) is the per-group
+  threshold. A second threshold `FED_WARN_LIMIT` (env var `FED_WARN_LIMIT`,
+  default 0 = disabled) triggers
   auto-ban when a user's total warns across all groups reaches or exceeds the
   configured value. See
   [`../features/moderation/warnings.md`](../features/moderation/warnings.md).
@@ -207,7 +207,7 @@ Mutes use an append-only audit trail (`mutes`) plus a live-state store (`active_
 
 ## Caches
 
-`cache.py` provides two cache types and four public singletons.
+`cache.py` provides two cache types and five public singletons.
 
 ### Cache types
 

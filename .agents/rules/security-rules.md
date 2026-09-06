@@ -19,8 +19,8 @@ commands live in [`tooling-validation.md`](tooling-validation.md).
 - Use `ROLE_LABEL` for user-facing role labels.
 - Use `identity.classify`, `identity.refuse_message`, and
   `identity.staff_notice` for self, bot, Telegram, Founder, and staff branches.
-- Call `Demote.execute(..., trigger="ban"|"kick")` before banning or kicking a
-  target who holds a federation role.
+- Call `Demote.execute(..., trigger="ban"|"kick"|"mute")` before banning, kicking,
+  or muting a target who holds a federation role.
 - Developer and Tester roles live in `tc_roles`.
 - Admin promotion requests use `queues_db` and the existing promotion workflow.
 - Role lookup failures must reject the action (fail closed); never treat a

@@ -448,7 +448,7 @@ class _CfgAdapter:
 
         Parsed from PROOF_TIMEOUT_SECONDS.  Reserved for future inactivity-timeout
         wiring; PTB ``conversation_timeout`` requires the ``job-queue`` extra which
-        conflicts with the APScheduler 4 dependency, so this value is currently
+        conflicts with the persistent APScheduler setup, so this value is currently
         unused by any ConversationHandler.
         """
         return self._c.proof_timeout_seconds
@@ -459,7 +459,7 @@ class _CfgAdapter:
 
         Parsed from APPEAL_TIMEOUT_SECONDS.  Reserved for future inactivity-timeout
         wiring; PTB ``conversation_timeout`` requires the ``job-queue`` extra which
-        conflicts with the APScheduler 4 dependency, so this value is currently
+        conflicts with the persistent APScheduler setup, so this value is currently
         unused by any ConversationHandler.
         """
         return self._c.appeal_timeout_seconds

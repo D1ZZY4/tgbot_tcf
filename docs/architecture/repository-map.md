@@ -27,9 +27,10 @@ This page maps the repository structure and the service boundaries between packa
 └── Dockerfile              Container image
 ```
 
-Repository maintenance guidance lives under `.agents/`. Its three canonical
-rule files are `rules/tooling-validation.md`, `rules/code-style.md`, and
-`rules/comment-style.md`; specialized skills live under `.agents/skills/`.
+Repository maintenance guidance lives under `.agents/`. Its six canonical
+rule files are `rules/tooling-validation.md`, `rules/code-style.md`,
+`rules/comment-style.md`, `rules/docs-rules.md`, `rules/security-rules.md`, and
+`rules/asyncio-gather-rules.md`; specialized skills live under `.agents/skills/`.
 
 ## Documentation structure
 
