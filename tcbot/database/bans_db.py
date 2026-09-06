@@ -1,6 +1,6 @@
 # © Copyright 2024 - 2026 Transsion Core
 # © Copyright 2024 - 2026 Dizzy
-# © Copyright 2026 Ave Studio
+# © Copyright 2026 Ave Labs
 
 """Bans collection helpers - manages all ban-related database operations."""
 
@@ -9,6 +9,7 @@ from __future__ import annotations
 from typing import TYPE_CHECKING, cast
 
 from pymongo import ReturnDocument
+from pymongo.errors import DuplicateKeyError
 
 from tcbot.database.documents import BanDoc
 from tcbot.database.mongos import col, db_call, make_short_id
@@ -71,7 +72,8 @@ async def create_ban(
     duration_str: str | None = None,
 ) -> BanDoc:
     """Create a new ban record in the database."""
-    if ban_id is None:
+    auto_id = ban_id is None
+    if auto_id:
         ban_id = make_ban_id()
     doc = {
         "ban_id": ban_id,
@@ -91,7 +93,19 @@ async def create_ban(
         "review_message_id": None,
         "review_timestamp": None,
     }
-    await db_call(_bans().insert_one(doc))
+    try:
+        await db_call(_bans().insert_one(doc))
+    except DuplicateKeyError:
+        # * 10-char random ID collision (vanishingly rare but possible under
+        # * concurrent bans): retry once with a fresh ID instead of failing
+        # * the moderation action. Only safe for auto-generated IDs: callers
+        # * that pass an explicit ban_id reuse it for the appeal link and log
+        # * patch, so a silent swap would orphan those references. A second
+        # * collision (or any explicit-ID collision) propagates to the caller.
+        if not auto_id:
+            raise
+        doc["ban_id"] = make_ban_id()
+        await db_call(_bans().insert_one(doc))
     return cast("BanDoc", doc)
 
 

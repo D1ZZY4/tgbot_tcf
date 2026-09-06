@@ -37,6 +37,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Fixed
 
+- **Ban-ID collision retry for auto-generated IDs** (`tcbot/database/bans_db.py`): `create_ban` propagated a `DuplicateKeyError` on 10-char random ID collision, failing the moderation action. Retries once with a fresh ID; explicit caller-supplied IDs (reused for appeal links and log patches) still propagate to avoid orphaning those references.
+
 - **Group record precision fixes** (`tcbot/database/groups_db.py`): `add_group` rewrote `added_date` on every re-add, corrupting the first-connect date shown in stats; it now uses `$setOnInsert`. `deactivate_group` busted the cached groups list even when nothing matched; no-match is now a pure no-op. `migrate_group` marked the new chat connected (120 s cache) even when only a pending row moved; the `True` mark and list invalidation now require the federated row itself to move.
 
 - **Batch first-name lookups check L1 first** (`tcbot/database/users_cache.py`): `get_first_names_batch` (used by check/stats renders) hit MongoDB on every call even for cached users. L1 hits are now served without I/O and only uncached IDs trigger the batch query; not-found IDs cache the sentinel. Found rows are deliberately not written back (the projection omits `last_name`, which would corrupt triple change detection).
