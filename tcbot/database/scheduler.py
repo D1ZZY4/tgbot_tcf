@@ -41,6 +41,7 @@ from apscheduler.triggers.interval import IntervalTrigger
 from tcbot.database.bans_db import deactivate_ban as _bans_deactivate
 from tcbot.database.mongos import col as _col
 from tcbot.database.mongos import db_call as _db_call
+from tcbot.database.mongos import mongo_client_kwargs as _mongo_client_kwargs
 from tcbot.utils.time_and_date import utc_now
 
 log = logging.getLogger(__name__)
@@ -177,7 +178,18 @@ async def _scheduler_background(
     ``scheduler.shutdown()``.
     """
     global _scheduler, _sched_error
-    jobstores = {"mongodb": MongoDBJobStore(database=db_name, host=mongodb_uri)}
+    # * MongoDBJobStore builds its own synchronous MongoClient, so it needs
+    # * the same certifi TLS pinning as the Motor client: without it, Atlas
+    # * handshakes fail with CERTIFICATE_VERIFY_FAILED on sandboxes whose
+    # * system CA store is stale, while Motor connects fine. Extra kwargs
+    # * flow straight into pymongo.MongoClient (supported by APScheduler 3.x).
+    jobstores = {
+        "mongodb": MongoDBJobStore(
+            database=db_name,
+            host=mongodb_uri,
+            **_mongo_client_kwargs(),  # type: ignore[arg-type]
+        )
+    }
     scheduler = AsyncIOScheduler(jobstores=jobstores)
     _scheduler = scheduler
     try:

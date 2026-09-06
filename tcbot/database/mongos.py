@@ -101,19 +101,30 @@ def db() -> AsyncIOMotorDatabase:
 # ! CRITICAL: Must be called before any database operations
 
 
+def mongo_client_kwargs() -> dict[str, object]:
+    """Extra MongoClient kwargs shared by every MongoDB client in the process.
+
+    Pins TLS trust to the certifi Mozilla bundle. Sandboxes without a
+    usable system CA store (empty /etc/ssl/certs) fail Atlas handshakes
+    with CERTIFICATE_VERIFY_FAILED ("unable to get local issuer
+    certificate"); certifi is current where the system store is not.
+    Skipped when the URI already carries its own tlsCAFile so an
+    operator override always wins; ignored for non-TLS schemes.
+    Shared by the async Motor client below and the scheduler's separate
+    synchronous client (APScheduler builds its own ``MongoClient`` for
+    ``MongoDBJobStore``, so it needs the same pinning or scheduler
+    startup dies with the identical TLS error while Motor connects fine).
+    """
+    if "tlscafile" not in cfg.mongodb_uri.lower():
+        return {"tlsCAFile": certifi.where()}
+    return {}
+
+
 async def connect() -> None:
     """Establish MongoDB connection and initialize the global _db instance."""
     global _db
     _patch_dns_if_needed()
-    # * Pin TLS trust to the certifi Mozilla bundle. Sandboxes without a
-    # * usable system CA store (empty /etc/ssl/certs) fail Atlas handshakes
-    # * with CERTIFICATE_VERIFY_FAILED ("unable to get local issuer
-    # * certificate"); certifi is current where the system store is not.
-    # * Skipped when the URI already carries its own tlsCAFile so an
-    # * operator override always wins; ignored for non-TLS schemes.
-    client_kwargs: dict[str, object] = {}
-    if "tlscafile" not in cfg.mongodb_uri.lower():
-        client_kwargs["tlsCAFile"] = certifi.where()
+    client_kwargs = mongo_client_kwargs()
     client = AsyncIOMotorClient(
         cfg.mongodb_uri,
         serverSelectionTimeoutMS=_MONGO_SERVER_SELECTION_MS,
