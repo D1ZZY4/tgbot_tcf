@@ -212,6 +212,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 - **Mute executor and demote observability hardening** (`tcbot/modules/helper/workflows/muting_flow.py`, `demote_flow.py`): `_execute_mute` indexed `user_data` directly, raising `KeyError` on stale or partially-cleared state; missing IDs now abort with a warning before any side effect. `Demote.execute` logs when the expected role row is already gone, leaving a trace for the stale-cache wrong-collection case instead of silent retention.
 
+- **Server-side pagination for ban and user lists** (`tcbot/database/bans_db.py`, `users_cache.py`, `helper/workflows/stats_flow.py`, `check_flow.py`, `docs/features/statistics.md`, `docs/architecture/database.md`, `docs/features/moderation/check.md`): the stats ban list, ban detail, user list, and user detail loaded entire collections into Python on every view, and name search scanned every active ban plus a batch name fetch. New `active_bans_page` / `active_bans_for_users` / `user_appealable_bans` / `all_users_page` helpers move count, skip/limit, `$in`, and the appeal filter onto existing indexes; only the visible slice travels over the wire. Name search now uses the anchored member-cache lookup (same semantics as command target resolution, capped at 30 hits, which also bounds the per-user search state) instead of unbounded substring matching. The fake-paginated `all_users()` 200-doc cap (deeper pages unreachable) is removed; docs updated.
+
 </details>
 
 ## [6.5.0] - 2026-09-06

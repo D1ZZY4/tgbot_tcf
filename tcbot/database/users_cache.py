@@ -353,21 +353,21 @@ async def total_users() -> int:
     return await db_call(_members().estimated_document_count())
 
 
-_PAGE_LIMIT = 200
-
-# * Allowed sort keys for all_users(). Unvalidated strings would force an
-# * unindexed COLLSCAN plus an in-memory sort, then silently truncate at
-# * _PAGE_LIMIT. Keep the set aligned with UserDoc fields and existing indexes.
+# * Allowed sort keys for all_users_page(). Unvalidated strings would force an
+# * unindexed COLLSCAN plus an in-memory sort. Keep the set aligned with
+# * UserDoc fields and existing indexes.
 _ALLOWED_USER_SORTS: frozenset[str] = frozenset(
     {"user_id", "username", "first_name", "last_name", "commit_date", "last_updated"}
 )
 
 
-async def all_users(*, sort_by: str = "first_name") -> list[UserDoc]:
-    """Return cached users capped at ``_PAGE_LIMIT``, sorted by ``sort_by`` (default: first name).
+async def all_users_page(
+    *, skip: int = 0, limit: int = 200, sort_by: str = "first_name"
+) -> list[UserDoc]:
+    """Return one page of cached users (server-side skip/limit).
 
-    Used by the ``/tcstats`` Users drill-down. The cap prevents unbounded
-    scans on large caches; pagination in the caller handles the rest.
+    Prefer this over :func:`all_users` for paginated views: only the
+    visible slice travels over the wire regardless of cache size.
     """
     if sort_by not in _ALLOWED_USER_SORTS:
         sort_by = "first_name"
@@ -387,8 +387,9 @@ async def all_users(*, sort_by: str = "first_name") -> list[UserDoc]:
             },
         )
         .sort(sort_by, sort_dir)
-        .limit(_PAGE_LIMIT)
-        .to_list(length=None)
+        .skip(max(0, skip))
+        .limit(max(1, limit))
+        .to_list(length=limit)
     )
 
 

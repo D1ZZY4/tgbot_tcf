@@ -269,13 +269,13 @@ class Check:
             ts = date_or_unknown(ban.get("timestamp"))
             reason_short = str(ban.get("reason", "(no reason)"))[:_BAN_LIST_REASON_LEN]
             lines.append(
-                f"{base_idx + i}. {status} | {code(ban['ban_id'])} | {ts}\n"
+                f"{base_idx + i}. {status} | {code(ban.get('ban_id', ''))} | {ts}\n"
                 f"   {italic(reason_short)}"
             )
             item_btns.append(
                 InlineKeyboardButton(
                     str(base_idx + i),
-                    callback_data=f"check_ban_item:{target_id}:{ban['ban_id']}",
+                    callback_data=f"check_ban_item:{target_id}:{ban.get('ban_id', '')}",
                 )
             )
 
@@ -311,7 +311,7 @@ class Check:
                 ]
             )
 
-        text, proof_link = await build_ban_detail(cast("dict[str, Any]", ban))
+        text, proof_link = await build_ban_detail(ban)
         rows: list[list[InlineKeyboardButton]] = []
         if proof_link:
             rows.append([InlineKeyboardButton("View Proof", url=proof_link)])
@@ -485,8 +485,10 @@ class Check:
         page: int,
     ) -> tuple[str, InlineKeyboardMarkup]:
         """Paginated list of every ban that ever had an appeal submitted."""
+        # * Server-side appeal filter (sparse index): only appealable rows
+        # * travel over the wire instead of the user's full ban history.
         all_bans, display_name = await asyncio.gather(
-            db.bans_db.user_bans(target_id),
+            db.bans_db.user_appealable_bans(target_id),
             _name(target_id),
             return_exceptions=True,
         )
@@ -494,7 +496,7 @@ class Check:
             all_bans = []
         if isinstance(display_name, BaseException):
             display_name = str(target_id)
-        bans = [b for b in all_bans if b.get("appeal_log_msg_id") is not None]
+        bans = all_bans
         chunk, total_pages, page = paginate(bans, page, _PAGE_SIZE)
 
         if not bans:
@@ -517,12 +519,13 @@ class Check:
                 else "Pending / Rejected"
             )
             lines.append(
-                f"{base_idx + i}. {status}\n   Ban ID: {code(ban['ban_id'])} | {ts}"
+                f"{base_idx + i}. {status}\n"
+                f"   Ban ID: {code(ban.get('ban_id', ''))} | {ts}"
             )
             item_btns.append(
                 InlineKeyboardButton(
                     str(base_idx + i),
-                    callback_data=f"check_ban_item:{target_id}:{ban['ban_id']}",
+                    callback_data=f"check_ban_item:{target_id}:{ban.get('ban_id', '')}",
                 )
             )
 

@@ -94,7 +94,7 @@ Bans: N total, page p/P
 
 ### Appeals (`check_appeals:<target_id>:<page>`)
 
-`Check.appeals_list` filters `user_bans` to records with a populated `appeal_log_msg_id`, then paginates them. Each line shows whether the appeal was approved (the ban is now inactive) or is still pending / was rejected (the ban is still active). Numbered buttons open the same `Check.ban_detail` view as the Bans drill-down.
+`Check.appeals_list` fetches `user_appealable_bans` (server-side appeal filter on the sparse index), then paginates them. Each line shows whether the appeal was approved (the ban is now inactive) or is still pending / was rejected (the ban is still active). Numbered buttons open the same `Check.ban_detail` view as the Bans drill-down.
 
 ### Warnings (`check_warns:<target_id>` and `check_warn_chat:<target_id>:<chat_id>:<page>`)
 

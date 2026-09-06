@@ -304,6 +304,66 @@ async def active_bans() -> list[BanDoc]:
     )
 
 
+async def active_bans_page(skip: int, limit: int) -> list[BanDoc]:
+    """Return one page of active bans, newest first (server-side skip/limit).
+
+    Prefer this over :func:`active_bans` for paginated views: only the
+    visible slice travels over the wire regardless of federation size.
+    Uses the ``(is_active, timestamp, ban_id)`` index.
+    """
+    return await db_call(
+        _bans()
+        .find(
+            {"is_active": True},
+            {"_id": 0},
+            sort=[("timestamp", -1), ("ban_id", -1)],
+        )
+        .skip(max(0, skip))
+        .limit(max(1, limit))
+        .to_list(length=limit)
+    )
+
+
+async def active_bans_for_users(user_ids: list[int]) -> list[BanDoc]:
+    """Return active bans for the given users (server-side ``$in``).
+
+    Backs name-search results without loading the whole active-ban list.
+    Uses the ``(banned_user_id, is_active, ...)`` index.
+    """
+    if not user_ids:
+        return []
+    return await db_call(
+        _bans()
+        .find(
+            {"banned_user_id": {"$in": user_ids}, "is_active": True},
+            {"_id": 0},
+            sort=[("timestamp", -1), ("ban_id", -1)],
+        )
+        .to_list(None)
+    )
+
+
+async def user_appealable_bans(user_id: int) -> list[BanDoc]:
+    """Return the user's bans that ever had an appeal submitted, newest first.
+
+    Server-side version of the ``appeal_log_msg_id is not None`` filter;
+    same predicate as :func:`user_appeal_count`, served by the sparse
+    ``(banned_user_id, appeal_log_msg_id)`` index.
+    """
+    return await db_call(
+        _bans()
+        .find(
+            {
+                "banned_user_id": user_id,
+                "appeal_log_msg_id": {"$ne": None, "$exists": True},
+            },
+            {"_id": 0},
+            sort=[("timestamp", -1), ("ban_id", -1)],
+        )
+        .to_list(None)
+    )
+
+
 async def active_ban_user_ids() -> list[int]:
     """Return only the user IDs of all active bans (projection-only, fastest path)."""
     docs = await db_call(

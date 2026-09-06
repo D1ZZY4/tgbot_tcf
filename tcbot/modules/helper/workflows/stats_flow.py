@@ -34,8 +34,14 @@ log = logging.getLogger(__name__)
 if TYPE_CHECKING:
     from telegram.ext import ContextTypes
 
+    from tcbot.database.documents import BanDoc
+
 _PAGE_SIZE = 6
 _BTNS_PER_ROW = 3
+
+# * Cap for stats name search: bounds the $in fetch and the per-user
+# * search-result state kept in user_data.
+_SEARCH_LIMIT = 30
 
 # * Search panel state lives on ``ctx.user_data`` while the user composes a
 # * query. Kept here so the runtime callback handlers and the message-input
@@ -311,19 +317,23 @@ class Stats:
     @classmethod
     async def users_list(cls, page: int) -> tuple[str, InlineKeyboardMarkup]:
         """Paginated list of every cached user."""
-        users = await db.users_cache.all_users()
-        chunk, total_pages, page = paginate(users, page, _PAGE_SIZE)
+        # * Server-side count + page fetch: the 200-doc cap in all_users()
+        # * made deeper pages unreachable; page from the full collection.
+        total = await db.users_cache.total_users()
+        total_pages = max(1, (total + _PAGE_SIZE - 1) // _PAGE_SIZE)
+        page = max(0, min(page, total_pages - 1))
+        chunk = await db.users_cache.all_users_page(
+            skip=page * _PAGE_SIZE, limit=_PAGE_SIZE
+        )
 
-        if not users:
+        if total == 0:
             text = (
                 f"{bold('Users')}\n\nNo cached users yet. The bot caches users "
                 "as it sees them across connected groups."
             )
             return text, back_kb()
 
-        lines = [
-            f"{bold('Users')} - {len(users)} total - page {page + 1}/{total_pages}\n"
-        ]
+        lines = [f"{bold('Users')} - {total} total - page {page + 1}/{total_pages}\n"]
         base_idx = page * _PAGE_SIZE
         for i, u in enumerate(chunk, start=1):
             uid = u.get("user_id", 0)
@@ -345,8 +355,9 @@ class Stats:
         cls, bot: Bot, page: int, idx: int, stable: str | None = None
     ) -> tuple[str, InlineKeyboardMarkup]:
         """Detail card for a single cached user, with a link back into the list page."""
-        users = await db.users_cache.all_users()
-        chunk, _total, page = paginate(users, page, _PAGE_SIZE)
+        chunk = await db.users_cache.all_users_page(
+            skip=page * _PAGE_SIZE, limit=_PAGE_SIZE
+        )
         if idx < 0 or idx >= len(chunk):
             text = _ERR_USER_NOT_FOUND
             kb = InlineKeyboardMarkup(
@@ -465,10 +476,14 @@ class Stats:
     @classmethod
     async def bans_list(cls, page: int) -> tuple[str, InlineKeyboardMarkup]:
         """Paginated list of every active federation ban."""
-        bans = await db.bans_db.active_bans()
-        chunk, total_pages, page = paginate(bans, page, _PAGE_SIZE)
+        # * Server-side count + page fetch: only the visible slice travels
+        # * over the wire regardless of federation size (no full-list load).
+        total = await db.bans_db.active_ban_count()
+        total_pages = max(1, (total + _PAGE_SIZE - 1) // _PAGE_SIZE)
+        page = max(0, min(page, total_pages - 1))
+        chunk = await db.bans_db.active_bans_page(page * _PAGE_SIZE, _PAGE_SIZE)
 
-        if not bans:
+        if total == 0:
             text = f"{bold('User Bans')}\n\nNo active federation bans."
             return text, back_kb()
 
@@ -477,7 +492,7 @@ class Stats:
         fname_map = await db.users_cache.get_first_names_batch(uids) if uids else {}
 
         lines = [
-            f"{bold('User Bans')} - {len(bans)} total - page {page + 1}/{total_pages}\n"
+            f"{bold('User Bans')} - {total} total - page {page + 1}/{total_pages}\n"
         ]
         base_idx = page * _PAGE_SIZE
         for i, ban in enumerate(chunk, start=1):
@@ -525,7 +540,7 @@ class Stats:
                     ]
                 )
                 return text, kb
-            text, proof_link = await build_ban_detail(cast("dict", ban))
+            text, proof_link = await build_ban_detail(ban)
             rows: list[list[InlineKeyboardButton]] = []
             if proof_link:
                 rows.append([InlineKeyboardButton("View Proof", url=proof_link)])
@@ -533,8 +548,9 @@ class Stats:
                 [InlineKeyboardButton("« Back", callback_data=f"stats_bans:{page}")]
             )
             return text, InlineKeyboardMarkup(rows)
-        bans = await db.bans_db.active_bans()
-        chunk, _total, page = paginate(bans, page, _PAGE_SIZE)
+        # * Legacy list-index lookup: fetch only the tapped page
+        # * server-side instead of the whole active-ban list.
+        chunk = await db.bans_db.active_bans_page(page * _PAGE_SIZE, _PAGE_SIZE)
         if idx < 0 or idx >= len(chunk):
             text = _ERR_BAN_NOT_FOUND
             kb = InlineKeyboardMarkup(
@@ -616,32 +632,30 @@ class Stats:
     async def search_run(
         cls,
         query: str,
-    ) -> list[dict]:
-        """Resolve a search query against the active-ban list (ID or name match)."""
+    ) -> list[BanDoc]:
+        """Resolve a search query against active bans (ID or name match).
+
+        Name matching is server-side: an anchored prefix lookup in the
+        member cache (same semantics as target resolution), capped at
+        ``_SEARCH_LIMIT`` hits, then a single ``$in`` fetch of their
+        active bans. Never loads the whole ban list.
+        """
         q = query.strip()
         if q.isdigit():
             ban = await db.bans_db.get_active_ban(int(q))
-            return [cast("dict[str, object]", ban)] if ban else []
+            return [ban] if ban else []
 
-        bans = await db.bans_db.active_bans()
-        if not bans:
+        matches = await db.users_cache.search_by_name(q, limit=_SEARCH_LIMIT)
+        if not matches:
             return []
-
-        # Batch query for all user names
-        uids = [b.get("banned_user_id", 0) for b in bans]
-        fname_map = await db.users_cache.get_first_names_batch(uids)
-        needle = q.lower()
-        return [
-            cast("dict[str, object]", b)
-            for b in bans
-            if needle in fname_map.get(b.get("banned_user_id", 0), "").lower()
-        ]
+        uids = [u.get("user_id", 0) for u in matches if u.get("user_id")]
+        return await db.bans_db.active_bans_for_users(uids)
 
     @classmethod
     async def search_results(
         cls,
         query: str,
-        results: list[dict],
+        results: list[BanDoc],
     ) -> tuple[str, InlineKeyboardMarkup]:
         """Render search results: empty state or numbered hits."""
         if not results:
@@ -660,7 +674,7 @@ class Stats:
 
     @classmethod
     async def search_detail(
-        cls, results: list[dict], idx: int
+        cls, results: list[BanDoc], idx: int
     ) -> tuple[str, InlineKeyboardMarkup]:
         """Detail card for a single search hit."""
         if idx < 0 or idx >= len(results):

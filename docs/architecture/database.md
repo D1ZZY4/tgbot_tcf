@@ -77,7 +77,7 @@ For group title lookups across multiple chat IDs, use `groups_db.get_group_title
 | `resolve_user_identity(bot, user_id)` / `sync_user_identity(bot, user_id)` | Triple | Shared resolvers in `extraction.py`. `resolve` fills gaps only (cache fast path, else one bounded live fetch). `sync` additionally verifies a cached document against live Telegram and updates on mismatch. Both persist what they find; profile views (`/check`, `/tcstats` detail) use `sync`. |
 | `has_recent_identity_attempt(user_id)` / `remember_identity(...)` | L1 only | Bounds repeat Telegram lookups by the L1 TTL without touching MongoDB. |
 
-**Performance tip:** Use batch functions whenever you need data for more than one user in a list view or fan-out result. Calling single-user functions inside a loop is an N+1 anti-pattern. Both batch functions use the `(user_id, first_name, username)` index in `member_cache`. For partial-name target resolution, use `search_by_name` instead of `all_users` to avoid transferring the full collection.
+**Performance tip:** Use batch functions whenever you need data for more than one user in a list view or fan-out result. Calling single-user functions inside a loop is an N+1 anti-pattern. Both batch functions use the `(user_id, first_name, username)` index in `member_cache`. For partial-name target resolution, use `search_by_name` instead of loading users into Python. For paginated list views, use the server-side page helpers (`active_bans_page`, `all_users_page`) instead of fetching full collections.
 
 **Hot-path harvest pattern:** On every observed Telegram update, call
 `harvest_user_identity` (not `upsert_user`). When the cached identity has not
@@ -165,6 +165,7 @@ Key helper functions:
 - `bans_db.set_review(...)` / `bans_db.set_appeal_log_msg(...)`: store appeal/review metadata on an existing ban.
 - `bans_db.set_review_if_absent(...)`: atomic variant used by appeal submission; claims the pending-review slot only when none is stored and returns whether this submit won, so concurrent duplicate submits cannot overwrite each other.
 - `bans_db.active_bans()` / `bans_db.active_ban_count()` / `bans_db.active_ban_user_ids()`: federation-wide active ban queries.
+- `bans_db.active_bans_page(skip, limit)` / `bans_db.active_bans_for_users(ids)` / `bans_db.user_appealable_bans(user_id)`: server-side paged/filtered variants for list views, name search, and the appeals drill-down.
 - `bans_db.user_bans(user_id)` / `bans_db.user_ban_count(user_id)`: per-user ban history (all records, active and inactive).
 - `bans_db.user_appeal_count(user_id)`: count of submitted appeals for a user.
 

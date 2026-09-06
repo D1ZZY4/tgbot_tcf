@@ -88,7 +88,7 @@ Testers (n)
 
 ### Users (`stats_users:<page>` and `stats_user_item:<page>:<idx>[:stable]`)
 
-`Stats.users_list(page)` paginates `users_cache.all_users()` (sorted by `first_name`). Each row shows the cached display name, ID, and `@username` when present. Numbered buttons open `Stats.user_detail(bot, page, idx, stable)`, which renders instantly from cache and refreshes stale/sparse documents in the background via `extraction.launch_identity_refresh` (zero added latency):
+`Stats.users_list(page)` paginates `users_cache.all_users_page()` (server-side skip/limit, sorted by `first_name`). Each row shows the cached display name, ID, and `@username` when present. Numbered buttons open `Stats.user_detail(bot, page, idx, stable)`, which renders instantly from cache and refreshes stale/sparse documents in the background via `extraction.launch_identity_refresh` (zero added latency):
 
 ```text
 User Details
@@ -124,14 +124,14 @@ Date: <utc>
 
 ### User Bans (`stats_bans:<page>` and `stats_ban_item:<page>:<idx>[:stable]`)
 
-`Stats.bans_list(page)` paginates `bans_db.active_bans()`. The list is ordered newest first via the existing index. The page footer adds a `[ Search ]` button that opens the search panel. Numbered buttons open `Stats.ban_detail(page, idx, stable)`, which reuses `helper/ban_info.build_ban_detail` and exposes a `View Proof` URL when proof exists. When the button carries the stable ban ID, the detail view fetches the record directly via `bans_db.get_ban` (one indexed read, immune to list shifts); missing or inactive records report not-found, matching the list-derived path.
+`Stats.bans_list(page)` pages `bans_db.active_bans_page()` (server-side count via `active_ban_count()` plus one skip/limit fetch, newest first). The list is ordered newest first via the existing index. The page footer adds a `[ Search ]` button that opens the search panel. Numbered buttons open `Stats.ban_detail(page, idx, stable)`, which reuses `helper/ban_info.build_ban_detail` and exposes a `View Proof` URL when proof exists. When the button carries the stable ban ID, the detail view fetches the record directly via `bans_db.get_ban` (one indexed read, immune to list shifts); missing or inactive records report not-found, matching the list-derived path.
 
 ### Search panel (`stats_bans_search`, `stats_search_*`)
 
 `Stats.open_search` records `(chat_id, message_id)` in `ctx.user_data` so the user's free-text query message can be deleted and the original card edited in place. Search runs through `Stats.search_run`:
 
 - Numeric query → `bans_db.get_active_ban(int(query))`.
-- Non-numeric query → match against cached first names of every active ban (resolved in parallel).
+- Non-numeric query → anchored prefix lookup in the member cache via `users_cache.search_by_name` (same semantics as command target resolution, capped at 30 hits), then a single `$in` fetch of their active bans via `bans_db.active_bans_for_users`. Only matching rows travel over the wire.
 
 Results are rendered with a numbered keyboard. Each hit opens `Stats.search_detail`, which reuses `build_ban_detail` and offers `View Proof` plus `Back to Results`.
 
@@ -171,10 +171,11 @@ The previous `stats_chats_flow.py` has been removed; its responsibilities live e
 | `users_roles.all_admins()` | Full Admin list for the staff roster. |
 | `users_roles.all_by_role("developer" \| "tester")` | Per-role lists for the staff roster. |
 | `users_cache.total_users()` | Cached-user count for the overview. |
-| `users_cache.all_users()` | Paginated user list (server-sorted by `first_name`). |
+| `users_cache.all_users_page()` | Paginated user list (server-side skip/limit, server-sorted by `first_name`). |
 | `users_cache.get_first_name(uid, fallback)` | Display-name lookups. |
 | `bans_db.active_ban_count()` | Active-ban count for the overview. |
-| `bans_db.active_bans()` | Paginated ban list and search corpus. |
+| `bans_db.active_bans_page()` / `active_ban_count()` | Paginated ban list (server-side skip/limit). |
+| `bans_db.active_bans_for_users()` | Name-search hits (single `$in` fetch). |
 | `bans_db.get_active_ban(uid)` | Direct ID search hit. |
 | `groups_db.active_group_count()` | Connected-group count for the overview. |
 | `groups_db.active_groups()` | Paginated chat list and detail lookup. |
