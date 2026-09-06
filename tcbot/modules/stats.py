@@ -292,8 +292,11 @@ async def on_bans_search_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
         return
     ctx.user_data.pop(SEARCH_KEY, None)
 
+    # * Guard instead of assert: a search-panel input without a message object
+    # * is a no-op (state was already popped above), not a crash.
     msg = update.effective_message
-    assert msg is not None
+    if msg is None:
+        return
     query = (msg.text or "").strip()
 
     # * Run the search and delete the user's input message in parallel.

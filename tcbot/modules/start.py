@@ -150,10 +150,10 @@ async def _show_groups(q: CallbackQuery, *, detailed: bool) -> None:
     if isinstance(groups, BaseException):
         groups = []
     if not groups:
-        try:
-            await q.answer()
-        except Exception as exc:
-            log.debug("_show_groups no-groups answer failed: %s", exc)
+        # * Already answered in the gather above; answering again would raise
+        # * BadRequest (query already answered). Edit in place like the list
+        # * branch below (the old msg.reply_text referenced an undefined name,
+        # * so the empty state never rendered at all).
         try:
             await q.edit_message_text(
                 f"No groups are currently connected to {cfg.community_name}.",

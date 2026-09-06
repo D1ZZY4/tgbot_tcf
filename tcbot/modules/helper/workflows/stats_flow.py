@@ -565,13 +565,20 @@ class Stats:
     def open_search(
         cls, ctx: ContextTypes.DEFAULT_TYPE, q: CallbackQuery
     ) -> tuple[str, InlineKeyboardMarkup]:
-        """Open the search prompt; remember chat/message so input edits the right card."""
-        msg = cast("Message", q.message)
+        """Open the search prompt; remember chat/message so input edits the right card.
+
+        When the callback carries no accessible message (inline-message edge),
+        the prompt still renders but no card IDs are stored, so a later search
+        input degrades to a no-op edit instead of crashing on ``None``.
+        """
+        text = f"{bold('Search User Bans')}\n\nSend a name or user ID in the chat."
+        msg = q.message
+        if not isinstance(msg, Message):
+            return text, cls._search_panel_kb()
         ud = cast("dict[str, object]", ctx.user_data)
         ud[SEARCH_KEY] = True
         ud[MSG_KEY] = msg.message_id
         ud[CHAT_KEY] = msg.chat_id
-        text = f"{bold('Search User Bans')}\n\nSend a name or user ID in the chat."
         return text, cls._search_panel_kb()
 
     @staticmethod
