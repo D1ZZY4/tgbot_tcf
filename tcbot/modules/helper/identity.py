@@ -168,15 +168,16 @@ def _line(ident: Identity) -> str:
 # * lower-rank staff are never returned here; those go through the normal
 # * moderation flow. The reply is one short professional-but-friendly line.
 
+# * Staff roles (admin/developer/tester) are intentionally absent from the
+# * ban/kick/mute tables: those entries auto-demote the target via
+# * Demote.execute before enforcing, so refusing here would make the
+# * documented auto-demote unreachable.
 _BAN_REFUSE: dict[IdentityKind, str] = {
     "self": "Self-ban? Creative, but no. Federation needs you here.",
     "this_bot": "I keep this place running. Banning me is a no-go.",
     "telegram": "Telegram itself? Bold move. Not happening.",
     "anon_admin": "Cannot ban the anonymous admin placeholder.",
     "founder": "{line} runs the place, can't ban them through here.",
-    "admin": "{line} is an Admin. Demote them first if you really mean it.",
-    "developer": "{line} is a Developer. Demote them before you ban.",
-    "tester": "{line} is a Tester. Demote them before you ban.",
 }
 
 _KICK_REFUSE: dict[IdentityKind, str] = {
@@ -185,9 +186,6 @@ _KICK_REFUSE: dict[IdentityKind, str] = {
     "telegram": "Pretty sure I can't kick Telegram from its own group.",
     "anon_admin": "Cannot kick the anonymous admin placeholder.",
     "founder": "{line} runs the place, not getting kicked here.",
-    "admin": "{line} is an Admin. Demote them first if you really mean it.",
-    "developer": "{line} is a Developer. Demote them before you kick.",
-    "tester": "{line} is a Tester. Demote them before you kick.",
 }
 
 _MUTE_REFUSE: dict[IdentityKind, str] = {
@@ -196,9 +194,6 @@ _MUTE_REFUSE: dict[IdentityKind, str] = {
     "telegram": "Telegram service messages aren't muteable from here.",
     "anon_admin": "Cannot mute the anonymous admin placeholder.",
     "founder": "{line} runs the place, mute button doesn't apply.",
-    "admin": "{line} is an Admin. Demote them first if you really mean it.",
-    "developer": "{line} is a Developer. Demote them before you mute.",
-    "tester": "{line} is a Tester. Demote them before you mute.",
 }
 
 _WARN_REFUSE: dict[IdentityKind, str] = {

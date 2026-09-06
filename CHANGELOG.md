@@ -33,6 +33,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 - **Index fail-fast restored** (`tcbot/database/mongos.py`): `ensure_indexes()` swallowed per-index failures (logged, returned `None`), so the explicit fail-fast checks in `__main__._post_init` and `serverless` startup (`isinstance(indexes_r, BaseException)`) were dead code and the bot served traffic without uniqueness indexes. Failures are still all logged, then the first is re-raised (cancellation preserved), activating both fail-fast paths. Loud startup crash beats silent duplicate moderation records.
 - **Warn-expiry misfire window** (`tcbot/database/scheduler.py`): the daily `expire_old_warns` job used APScheduler defaults (1s misfire grace), so a restart straddling the 24h fire silently dropped that day's expiry (same defect class as the scheduled-unban fix). Now `misfire_grace_time=86400` with `coalesce=True`: at most one coalesced late run per missed day.
 
+- **Staff ban/kick/mute refusal unblocked** (`tcbot/modules/helper/identity.py`): `_BAN_REFUSE`, `_KICK_REFUSE`, and `_MUTE_REFUSE` refused admin/developer/tester targets with "Demote them first", which ran before `Demote.execute` in every entry handler (`banning.py`, `kicking.py`, `muting.py`) and made the documented auto-demote path unreachable for any staff target. Rank safety is unchanged: `resolve_and_check` still rejects equal/higher-rank targets before the refusal check, so only downward actions reach auto-demote. Founder refusal stays. Staff targets are now auto-demoted and enforced like the help text and feature docs already claimed.
+
 ## [6.5.0] - 2026-09-06
 
 ### Changed
