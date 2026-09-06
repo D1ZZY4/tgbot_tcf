@@ -24,7 +24,7 @@ Example module header:
 ```python
 # © Copyright 2024 - 2026 Transsion Core
 # © Copyright 2024 - 2026 Dizzy
-# © Copyright 2026 Ave Studio
+# © Copyright 2026 Ave Labs
 
 """One-line description of what this module does."""
 

@@ -19,7 +19,7 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 - **Read-tool rule wording** (`.agents/rules/tooling-validation.md`): the read-before-work rule now names `rg` alongside the other shell tools that must not substitute for full file reads.
 
-- **Ave Studio renamed to Ave Labs**: copyright holder renamed in all 79 occurrences (Python module headers, `LICENSE`, `README.md` license line, `code-style.md` example header). No behavior change.
+- **Ave Studio renamed to Ave Labs**: copyright holder renamed across all Python module headers, `LICENSE`, the `README.md` license line, and the `code-style.md` example header. No behavior change.
 
 ### Documentation
 

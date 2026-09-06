@@ -99,6 +99,6 @@ Contribution, issue, and pull request activity, rendered by Repobeats.
 
 ## License
 
-Copyright © 2024-2026 Transsion Core, Dizzy, Ave Studio. All rights reserved.
+Copyright © 2024-2026 Transsion Core, Dizzy, Ave Labs. All rights reserved.
 
 See `LICENSE` for details.
