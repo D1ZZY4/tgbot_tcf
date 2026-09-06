@@ -1,6 +1,6 @@
 # © Copyright 2024 - 2026 Transsion Core
 # © Copyright 2024 - 2026 Dizzy
-# © Copyright 2026 Ave Studio
+# © Copyright 2026 Ave Labs
 
 """Warnings collection helpers - manages user warning records in groups."""
 
@@ -177,7 +177,9 @@ async def clear_warns(user_id: int, chat_id: int) -> int:
         return_exceptions=True,
     )
     if isinstance(_cnt_del, BaseException):
-        log.warning(
+        # * Error-level: a surviving counter keeps stale counts that later
+        # * warns increment from, so this needs operator repair, not silence.
+        log.error(
             "clear_warns counter delete failed for user=%d chat=%d: %s",
             user_id,
             chat_id,
@@ -199,7 +201,8 @@ async def clear_all_warns(user_id: int) -> int:
         return_exceptions=True,
     )
     if isinstance(_cnt_del, BaseException):
-        log.warning(
+        # * Error-level: same stale-counter repair need as clear_warns above.
+        log.error(
             "clear_all_warns counter delete failed for user=%d: %s",
             user_id,
             _cnt_del,

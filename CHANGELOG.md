@@ -6,6 +6,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Changed
 
+- **Warn-counter repair failures escalated to error** (`tcbot/database/warns_db.py`): `clear_warns`/`clear_all_warns` logged counter-delete failures at warning level, but a surviving counter keeps stale counts that later warns increment from (threshold misfires needing manual repair). Now error level so the gap ships to `LOGS_ERRORS` like other state-repair needs.
+
 - **No-em-dash rule** (`.agents/rules/comment-style.md`, `.agents/rules/code-style.md`): the em dash character (U+2014) is now forbidden in every tracked file (code, comments, docstrings, reply/log strings, Markdown, YAML, INI, skill docs). The rule lives in `comment-style.md` with a pointer in the `code-style.md` forbidden-patterns index; box-drawing `─` (U+2500) dividers stay allowed. Swept all 20 existing occurrences across 11 files (three were in `identity.py`, `demote_flow.py`, and `unbanning.py` comments added during this audit).
 
 - **Shared auto-demote-or-abort helper** (`tcbot/modules/helper/workflows/demote_flow.py`, `tcbot/modules/banning.py`, `kicking.py`, `muting.py`): the three entry demote-fail blocks were triplicated (identical `Demote.execute` + log + reply apart from the action noun). New `Demote.auto_demote_or_abort(...)` owns the pattern and reports whether the caller may proceed; reply text, log text, and fail-closed control flow are identical to before. No behavior change.
