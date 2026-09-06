@@ -41,7 +41,11 @@ def parse_list(raw: str) -> list[str]:
         parsed = ast.literal_eval(raw)
         if isinstance(parsed, list):
             return [str(item).strip() for item in parsed]
-    except (ValueError, SyntaxError) as exc:
+    except ValueError as exc:
+        logging.getLogger(__name__).debug(
+            "parse_list falling back to CSV parsing: %s", exc
+        )
+    except SyntaxError as exc:
         logging.getLogger(__name__).debug(
             "parse_list falling back to CSV parsing: %s", exc
         )

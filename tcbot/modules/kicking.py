@@ -132,7 +132,8 @@ async def cmd_kick(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     if isinstance(role_result, BaseException):
         log.exception("resolve_and_check failed in cmd_kick: %s", role_result)
         return ConversationHandler.END
-    assert role_result is not None
+    # * isinstance + early return above already narrows role_result to the
+    # * success tuple; no assert needed (asserts vanish under python -O).
     executor_role, target_role = role_result
     # * Guard first: if resolve_and_check already replied and rejected (e.g. target
     # * outranks executor), skip the identity refusal to avoid sending two replies.

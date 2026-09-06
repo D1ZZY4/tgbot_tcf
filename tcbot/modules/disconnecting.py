@@ -100,13 +100,13 @@ async def cmd_tcdisconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     """
     chat = update.effective_chat
     user = update.effective_user
-    assert chat is not None
-    assert user is not None
-    assert update.effective_message is not None
+    msg = update.effective_message
+    if chat is None or user is None or msg is None:
+        return
 
     if chat.type == "private":
         try:
-            await update.effective_message.reply_text(replies.ERR_GROUP_ONLY)
+            await msg.reply_text(replies.ERR_GROUP_ONLY)
         except Exception as exc:
             log.debug("cmd_tcleave group-only reply failed: %s", exc)
         return
@@ -117,7 +117,7 @@ async def cmd_tcdisconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     # * lose primary-group enforcement and log delivery.
     if _is_primary_group(chat.id):
         try:
-            await update.effective_message.reply_text(_MSG_PRIMARY_REFUSED)
+            await msg.reply_text(_MSG_PRIMARY_REFUSED)
         except Exception as exc:
             log.debug("cmd_tcleave primary-group reply failed: %s", exc)
         return
@@ -136,7 +136,7 @@ async def cmd_tcdisconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     if isinstance(is_connected, BaseException):
         log.warning("is_connected check failed for chat=%d: %s", chat.id, is_connected)
         try:
-            await update.effective_message.reply_text(
+            await msg.reply_text(
                 "Could not verify the group status due to a server error. "
                 "Please try again."
             )
@@ -145,7 +145,7 @@ async def cmd_tcdisconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         return
     if not is_connected:
         try:
-            await update.effective_message.reply_text(
+            await msg.reply_text(
                 f"This group is not connected to {cfg.community_name}."
             )
         except Exception as exc:
@@ -154,7 +154,7 @@ async def cmd_tcdisconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     if isinstance(member, BaseException):
         log.debug("Disconnect: get_chat_member failed for %d: %s", chat.id, member)
         try:
-            await update.effective_message.reply_text(replies.ERR_ROLE_VERIFY)
+            await msg.reply_text(replies.ERR_ROLE_VERIFY)
         except Exception as exc:
             log.debug("cmd_tcleave role-verify reply failed: %s", exc)
         return
@@ -171,7 +171,7 @@ async def cmd_tcdisconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         else:
             msg_text = "Only the group owner or TC admins can disconnect this group."
         try:
-            await update.effective_message.reply_text(msg_text)
+            await msg.reply_text(msg_text)
         except Exception as exc:
             log.debug("cmd_tcleave not-authorized reply failed: %s", exc)
         return
@@ -186,7 +186,7 @@ async def cmd_tcdisconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
         deactivated = False
     if not deactivated:
         try:
-            await update.effective_message.reply_text(
+            await msg.reply_text(
                 "Failed to disconnect the group due to a server error. "
                 "The bot is still here; please try again."
             )
@@ -202,9 +202,7 @@ async def cmd_tcdisconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
             parse_mode="HTML",
             message_thread_id=lt,
         ),
-        update.effective_message.reply_text(
-            f"This group has been disconnected from {cfg.community_name}."
-        ),
+        msg.reply_text(f"This group has been disconnected from {cfg.community_name}."),
         ctx.bot.leave_chat(chat.id),
         return_exceptions=True,
     )
@@ -231,8 +229,8 @@ async def cmd_rmtc(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """
     msg = update.effective_message
     admin = update.effective_user
-    assert msg is not None
-    assert admin is not None
+    if msg is None or admin is None:
+        return
     args = parse_cmd_args(msg.text)
     if not args or not args[0].lstrip("-").isdigit():
         try:

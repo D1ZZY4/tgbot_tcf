@@ -106,13 +106,13 @@ async def cmd_tcconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """
     chat = update.effective_chat
     user = update.effective_user
-    assert chat is not None
-    assert user is not None
-    assert update.effective_message is not None
+    msg = update.effective_message
+    if chat is None or user is None or msg is None:
+        return
 
     if chat.type == "private":
         try:
-            await update.effective_message.reply_text(replies.ERR_GROUP_ONLY)
+            await msg.reply_text(replies.ERR_GROUP_ONLY)
         except Exception as exc:
             log.debug("cmd_tctc group-only reply failed: %s", exc)
         return
@@ -135,14 +135,14 @@ async def cmd_tcconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if isinstance(member, BaseException):
         log.debug("get_chat_member failed for %d/%d: %s", chat.id, user.id, member)
         try:
-            await update.effective_message.reply_text(replies.ERR_ROLE_VERIFY)
+            await msg.reply_text(replies.ERR_ROLE_VERIFY)
         except Exception as exc:
             log.debug("cmd_tctc role-verify reply failed: %s", exc)
         return
 
     if member.status not in ("administrator", "creator"):
         try:
-            await update.effective_message.reply_text(_ERR_ADMIN_REQUIRED)
+            await msg.reply_text(_ERR_ADMIN_REQUIRED)
         except Exception as exc:
             log.debug("cmd_tctc admin-required reply failed: %s", exc)
         return
@@ -152,7 +152,7 @@ async def cmd_tcconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     # * that fan-out paths unconditionally include.
     if _is_primary_group(chat.id):
         try:
-            await update.effective_message.reply_text(
+            await msg.reply_text(
                 "This is a primary group of the federation (main or exec). "
                 "Primary groups are not connected via /tcconnect."
             )
@@ -167,16 +167,14 @@ async def cmd_tcconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
 
     if is_connected:
         try:
-            await update.effective_message.reply_text(
-                connection.already_connected_message()
-            )
+            await msg.reply_text(connection.already_connected_message())
         except Exception as exc:
             log.debug("cmd_tctc already-connected reply failed: %s", exc)
         return
 
     if pending:
         try:
-            await update.effective_message.reply_text(_ERR_PENDING_REQUEST)
+            await msg.reply_text(_ERR_PENDING_REQUEST)
         except Exception as exc:
             log.debug("cmd_tctc pending-request reply failed: %s", exc)
         return
@@ -184,16 +182,14 @@ async def cmd_tcconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if isinstance(bot_member, BaseException):
         log.debug("Could not verify bot permissions for %d: %s", chat.id, bot_member)
         try:
-            await update.effective_message.reply_text(replies.ERR_ROLE_VERIFY)
+            await msg.reply_text(replies.ERR_ROLE_VERIFY)
         except Exception as exc:
             log.debug("cmd_tctc perms-verify reply failed: %s", exc)
         return
 
     if not connection.check_perms(bot_member):
         try:
-            await update.effective_message.reply_text(
-                connection.perms_required_message()
-            )
+            await msg.reply_text(connection.perms_required_message())
         except Exception as exc:
             log.debug("cmd_tctc perms-required reply failed: %s", exc)
         return
@@ -209,14 +205,14 @@ async def cmd_tcconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception:
         log.exception("complete_join failed for chat %d", chat.id)
         try:
-            await update.effective_message.reply_text(
+            await msg.reply_text(
                 "Failed to connect the group due to a server error. Please try again."
             )
         except Exception as reply_exc:
             log.debug("connect failure reply failed: %s", reply_exc)
         return
     try:
-        await update.effective_message.reply_text(connection.connected_message())
+        await msg.reply_text(connection.connected_message())
     except Exception as exc:
         log.debug("connected reply failed for chat %d: %s", chat.id, exc)
 

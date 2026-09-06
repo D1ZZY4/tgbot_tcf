@@ -406,8 +406,8 @@ async def cmd_demote(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     executor_role = None if isinstance(_exec_r, BaseException) else _exec_r
     if executor_role is None:
         return
-    # staff_only guarantees a valid role; assert narrows str | None → str for pyright
-    assert executor_role is not None
+    # * The None check above already narrows str | None to str for pyright;
+    # * no assert needed (asserts vanish under python -O).
     if isinstance(_target_r, BaseException):
         log.error("extract_target failed during demote: %s", _target_r)
         try:
@@ -533,8 +533,8 @@ async def on_demote_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
         except Exception as exc:
             log.debug("on_demote_confirm perm-expired edit failed: %s", exc)
         return
-    # Narrow executor_role to str after passing the "founder"/"admin" check
-    assert executor_role is not None
+    # * The membership check above already narrows executor_role to a staff
+    # * role for pyright; no assert needed (asserts vanish under python -O).
 
     target_role, mention_data = await asyncio.gather(
         db.users_roles.get_effective_role(target_id),

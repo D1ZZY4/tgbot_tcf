@@ -9,6 +9,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Changed
 
+- **Handler entry hardening sweep** (`tcbot/__init__.py`, `tcbot/modules/connecting.py`, `disconnecting.py`, `broadcasting.py`, `greeting.py`, `admins.py`, `banning.py`, `kicking.py`, `muting.py`, `stats.py`): entry `assert x is not None` checks became guard returns (asserts vanish under `python -O`, turning a missing field into an unhandled crash instead of a clean return), and `parse_list` splits the forbidden tuple-except form into two clauses. No success-path behavior change.
+
 - **Health mongodb field follows the live circuit** (`tcbot/alive.py`): `is_connected()` is a sticky startup flag, so a partitioned MongoDB still read `ok` while only the overall verdict degraded via the breaker. The field now ANDs the live mongodb-breaker state.
 
 - **Owner DMs throttled per incident** (`tcbot/utils/error_reporter.py`): owner-only errors (duplicate-instance `Conflict` storms) repeated every 30 s with no backstop. Repeats of one fingerprint past 3/hour are now suppressed (verified: 3 sends then silence); each new incident still notifies.
@@ -63,6 +65,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 ### Fixed
 
 - **Unmute/unban answer group-fetch and executor outages** (`tcbot/modules/helper/workflows/muting_flow.py`, `tcbot/modules/unbanning.py`, `docs/features/moderation/muting.md`, `unbanning.md`): `execute_unmute` awaited `active_groups()` unguarded, so a groups-fetch outage skipped the unmute with no reply while the active record stayed (same silent-crash class as the warn/mute executor hardening). It now replies with a retry notice and returns with the record untouched, and the `effective_user` check moved before the fan-out so no path restricts chats without clearing state and logging. `cmd_unban` logged `execute_unban` failures without replying, so a record re-fetch outage after a failed pre-fetch ended silently; it now replies with the same retry notice.
+
+- **Leaveall/cleanup answer group-list outages** (`tcbot/modules/maintenance.py`): `cmd_leaveall` and `cmd_cleanup` awaited `active_groups()` unguarded, ending silently on a database outage. Both now reply with a retry notice via `safe_reply`. A group row without `chat_id` yields a failed `_LeaveResult` instead of raising inside `fan_out`.
 
 - **Unban log renders the deactivated ban ID** (`tcbot/modules/helper/parse_logmsg.py`): `unban_log()` accepted `ban_id` but never rendered it, so the manual `/tcunban` audit entry lost the link between the log line and the deactivated record (the sole caller `unban_flow.execute_unban` already passes it, and `docs/features/moderation/unbanning.md` already documents it). The template now emits a `Ban ID` code field like the ban and appeal-unban logs. Also removed the never-passed, never-rendered `update_count` parameter from `ban_update_log()` (single caller passes positionally without it).
 

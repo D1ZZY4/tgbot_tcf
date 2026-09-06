@@ -87,8 +87,8 @@ async def cmd_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """
     msg = update.effective_message
     admin = update.effective_user
-    assert msg is not None
-    assert admin is not None
+    if msg is None or admin is None:
+        return
 
     args = parse_cmd_args(msg.text)
     broadcast_text: str | None = " ".join(args).strip() if args else None

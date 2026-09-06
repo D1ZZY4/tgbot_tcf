@@ -89,9 +89,10 @@ __help__: replies.HelpEntry = {
 @decorators.log_execution
 async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Send the federation overview message."""
-    text, kb = await Stats.main()
     msg = update.effective_message
-    assert msg is not None
+    if msg is None:
+        return
+    text, kb = await Stats.main()
     try:
         await msg.reply_text(text, parse_mode="HTML", reply_markup=kb)
     except Exception as exc:

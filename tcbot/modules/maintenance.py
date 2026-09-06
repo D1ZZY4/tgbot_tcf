@@ -35,6 +35,12 @@ _RL_LEAVEALL_LIMIT: int = 1
 
 _MEMBERSHIP_CHECK_TIMEOUT = 3.0
 
+# * Retry reply when the group list cannot be loaded (DB outage). Denial
+# * texts must only fire on proven verdicts, never on lookup failures.
+_ERR_GROUPS_LOAD = (
+    "Could not load the group list due to a server error. Please try again."
+)
+
 
 # ────────────────────── Module & Help Message ───────────────────── #
 
@@ -141,7 +147,12 @@ async def _leave_one(
     """
     chat_id = grp.get("chat_id")
     title = grp.get("title", "Unknown")
-    assert chat_id is not None
+    if chat_id is None:
+        # * Defensive: active_groups rows always carry chat_id, but a
+        # * malformed row must count as a failed leave, not raise inside
+        # * fan_out (which would surface as a bare BaseException entry).
+        log.warning("leaveall: skipping group record without chat_id: %s", title)
+        return _LeaveResult(chat_id=0, left=False, deactivated=False, log_sent=False)
     leave_result, deactivate_result, log_result = await asyncio.gather(
         bot.leave_chat(chat_id),
         db.groups_db.deactivate_group(chat_id),
@@ -224,8 +235,20 @@ async def cmd_leaveall(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     counted as a failure so the operator can investigate the ghost.
     """
     admin = update.effective_user
-    assert admin is not None
-    all_groups = await db.groups_db.active_groups()
+    if admin is None:
+        return
+    try:
+        all_groups = await db.groups_db.active_groups()
+    except Exception:
+        log.exception("active_groups failed during leaveall")
+        status_msg = update.effective_message
+        if status_msg is not None:
+            await safe_reply(
+                status_msg,
+                _ERR_GROUPS_LOAD,
+                log_label="leaveall groups-failed",
+            )
+        return
     # * Never tear down the primary groups. They are not in
     # * ``federated_groups`` today, but the explicit guard is defence in
     # * depth: if a future change ever adds them to the collection, or if
@@ -262,12 +285,11 @@ async def cmd_leaveall(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         [_leave_one(ctx.bot, g, lc, lt, admin.id, admin.first_name) for g in groups]
     )
 
-    # * ``fan_out`` returns a list of ``T | BaseException`` so any single
-    # * coroutine that raises (e.g. a transport error before the gather
-    # * starts) shows up as an entry. ``_leave_one`` itself only raises
-    # * the ``assert chat_id is not None``; if that fires we still treat
-    # * the group as failed. Filter BaseException out before unpacking
-    # * structured fields, then count each side-effect independently.
+    # * ``fan_out`` returns ``T | BaseException`` so a transport error that
+    # * escapes before the gather starts still shows up as an entry.
+    # * ``_leave_one`` itself never raises (a malformed row yields a failed
+    # * result), but filter defensively before unpacking structured fields,
+    # * then count each side-effect independently.
     ok_results = [r for r in all_results if isinstance(r, _LeaveResult)]
 
     # * Count success per side-effect. A leave is "fully successful" only
@@ -308,8 +330,18 @@ async def cmd_cleanup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     then replies with the count of removed groups.
     """
     reply_msg = update.effective_message
-    assert reply_msg is not None
-    groups = await db.groups_db.active_groups()
+    if reply_msg is None:
+        return
+    try:
+        groups = await db.groups_db.active_groups()
+    except Exception:
+        log.exception("active_groups failed during cleanup")
+        await safe_reply(
+            reply_msg,
+            _ERR_GROUPS_LOAD,
+            log_label="cleanup groups-failed",
+        )
+        return
 
     # * Semaphore-bounded to respect Telegram rate limits on large federations.
     checks = await fan_out([_should_remove(ctx.bot, g) for g in groups])
