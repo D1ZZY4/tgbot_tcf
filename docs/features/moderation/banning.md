@@ -18,10 +18,10 @@ flowchart TD
     RoleCheck -->|yes| AutoDemote[Auto-demote first]
     RoleCheck -->|no| ProofStep[WAITING_PROOF]
     AutoDemote --> ProofStep
-    ProofStep --> StoreBan[Store ban in bans_db]
-    StoreBan --> FanOut[Fan-out to all groups]
-    FanOut --> Log[Write log message]
-    Log --> AppealLink[Generate appeal deep-link]
+    ProofStep --> UploadProof[Upload proof to PROOFS]
+    UploadProof --> StoreLog[Store ban + post log in parallel]
+    StoreLog --> FanOut[Fan-out to all groups]
+    FanOut --> Summary[Edit prompt summary + DM appeal link]
 ```
 
 ## Purpose
@@ -80,6 +80,8 @@ Reason parsing depends on whether the first argument is an explicit target:
 ```
 
 If no reason remains after parsing, the bot ends the conversation and asks for `/tcban <target> <reason>`.
+
+When the command replies to a user message, every argument is treated as reason text. A leading numeric or `@username` token in a reply (for example `/tcb 12345 spamming` as a reply) stays part of the reason instead of being mistaken for an explicit target.
 
 ## Proof requirement
 
@@ -303,6 +305,7 @@ Manual unban does not currently edit any pending appeal review card. It deactiva
 
 ## Edge cases
 
+- When the `bans` write (`create_ban` / `update_ban`) fails, the flow aborts before any group is touched and the prompt is edited with a database-retry notice. This fail-closed path mirrors `execute_unban` and the warn auto-ban flow, and keeps a chat-enforced ban from existing without a database record.
 - Ban proof upload failures return `None`; the ban flow still continues and stores `0` as proof ID when no proof message ID is available.
 - If the ban log send fails, the database write may still complete, but no log message ID is stored.
 - If active group enforcement partially fails, the ban record remains active and the summary reports partial success.

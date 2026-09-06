@@ -30,9 +30,9 @@ flowchart TD
     D --> E
     E --> F[Admin sends photo/video proof]
     F --> G[Upload proof to proof destination]
-    G --> H[Create or update ban record]
+    G --> H[Create or update ban record + post log in parallel]
     H --> I[fan_out ban across connected groups]
-    I --> J[Post log with Proof and Submit Appeal buttons]
+    I --> J[Edit prompt summary + DM appeal link]
 ```
 
 Ban proof supports Telegram media albums. Album items are buffered for `ALBUM_DEBOUNCE_SECONDS` before processing.
@@ -69,7 +69,7 @@ flowchart TD
     B -- No --> X[Explain why appeal cannot start]
     B -- Yes --> C[Show appeal instructions]
     C --> D[User sends #appeal text]
-    D --> E{Required sections present?}
+    D --> E{Prefix + log link valid?}
     E -- No --> C
     E -- Yes --> F[Forward appeal and post review card]
     F --> G[Staff taps Approve or Reject]
@@ -87,7 +87,7 @@ Clarification: explanation of the situation
 Agreement: commitment to follow community rules
 ```
 
-The original banning admin has a 12-hour priority review window. During that window, only the banning admin (`admin_user_id` on the ban) can review. After the window, any staff reviewer accepted by `is_staff` (Founder or Admin) can act.
+The original banning admin has a 12-hour priority review window. During that window, only the banning admin (`admin_user_id` on the ban) can review. After the window, any staff reviewer accepted by `is_staff` (Founder or Admin) can act. When the ban record carries no usable banning admin (missing or zero `admin_user_id`), the window does not apply.
 
 ## Group connection flow
 

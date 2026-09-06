@@ -17,12 +17,16 @@ The bot currently uses:
 - batch queries in list and detail views to avoid repeated user and group reads;
 - MongoDB projections and indexes for frequently accessed fields;
 - `asyncio.gather()` for independent database and Telegram operations;
-- `TwoLevelCache` with an in-process L1 and optional Redis L2;
+- `TwoLevelCache` with an in-process L1 and optional Redis L2 (L2 reads are
+  bounded so a stalled Redis falls through instead of holding the hot path);
 - `estimated_document_count()` for count-only views where an exact count is not
   required;
 - callback acknowledgement alongside independent callback work where safe;
 - `fan_out()` from `tcbot/utils/dispatch.py` to bound concurrent work across
-  groups;
+  groups (batch joins use a local semaphore with the same bound);
+- cached auth reads (`owner_only` via the cached owner ID, `staff_only` via
+  the cached effective role) so repeated permission checks cost no database
+  round trip on cache hits;
 - circuit breakers around MongoDB and Telegram operations.
 
 The webhook receiver and polling fallback affect transport latency, but neither
@@ -101,6 +105,24 @@ unbounded `gather()` across groups.
 For callback handlers, acknowledge the callback before doing dependent work.
 When the database read is independent, existing handlers may run the
 acknowledgement and read together, but errors must still be handled explicitly.
+
+### Bounded identity resolution
+
+Unknown-user resolution (`extraction._fetch_live_identity`) tries one bounded
+`get_chat`, then probes connected groups with `get_chat_member`. Probes run
+concurrently under a semaphore (10, matching the `fan_out` Telegram cap) with
+an overall 15 s deadline; the first hit in group order wins. Probes never
+touch the Telegram circuit breaker: a timeout is only an identity miss, not
+congestion evidence. Callers that can tolerate staleness should render from
+cache first and refresh in the background via `launch_identity_refresh`.
+
+### Stable-ID detail lookups
+
+List buttons carry a stable entity ID so detail views can verify the record
+instead of trusting its position. `Stats.ban_detail` with a stable ban ID
+fetches the record directly via `bans_db.get_ban` (one indexed read) rather
+than re-reading the whole active-ban list, which also makes the view immune
+to list shifts between render and tap.
 
 ## Caches
 

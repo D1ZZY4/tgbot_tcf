@@ -124,6 +124,14 @@ founder = 4 > admin = 3 > developer = 2 > tester = 1 > none = 0
 
 Use `users_roles.role_rank()` and `users_roles.can_act_on()` instead of hand-written comparisons.
 
+Hot auth paths are cache-backed: `is_owner` resolves via the cached owner ID
+(300 s TTL, invalidated on transfer) and `is_staff` via the cached effective
+role (60 s TTL), so repeated checks cost no MongoDB round trip on hits.
+`owner_only` uses the cached owner ID and `staff_only` uses the cached
+effective role directly (fail-closed with a retry reply on outage, mirroring
+the appeal-review path); `is_staff` keeps its historical coerce-to-`False`
+contract for its remaining callers.
+
 ## Ban model
 
 `bans` documents are represented by `BanDoc` and may contain:
@@ -155,6 +163,7 @@ Key helper functions:
 - `bans_db.deactivate_all_active_bans(user_id)`: marks every active ban for a user inactive in one atomic update. Returns the count of deactivated records. Used by unban and appeal-approval flows to clear all active duplicates at once.
 - `bans_db.deactivate_extra_active_bans(user_id, keep_ban_id)`: marks all active bans for a user inactive except the one matching `keep_ban_id`. Used by the ban-update path to clean up duplicate active records before writing the canonical update.
 - `bans_db.set_review(...)` / `bans_db.set_appeal_log_msg(...)`: store appeal/review metadata on an existing ban.
+- `bans_db.set_review_if_absent(...)`: atomic variant used by appeal submission; claims the pending-review slot only when none is stored and returns whether this submit won, so concurrent duplicate submits cannot overwrite each other.
 - `bans_db.active_bans()` / `bans_db.active_ban_count()` / `bans_db.active_ban_user_ids()`: federation-wide active ban queries.
 - `bans_db.user_bans(user_id)` / `bans_db.user_ban_count(user_id)`: per-user ban history (all records, active and inactive).
 - `bans_db.user_appeal_count(user_id)`: count of submitted appeals for a user.
@@ -214,8 +223,9 @@ not perform network I/O. Suitable for caches that do not need Redis
 distribution.
 
 `TwoLevelCache[T]`: wraps `TTLCache[T]` and adds an optional Redis L2 layer.
-When Redis is available, `get_or_fetch` checks L1, then L2, then calls the DB
-fetch coroutine and populates both layers. `put` and `invalidate` operate on
+When Redis is available, `get_or_fetch` checks L1, then L2 (bounded by a
+1.0 s timeout so a stalled Redis falls through to the DB fetch), then calls
+the DB fetch coroutine and populates both layers. `put` and `invalidate` operate on
 L1 synchronously and enqueue FIFO Redis writes/deletes shared by cache objects
 using the same prefix. `clear_all` enqueues a prefix-wide `SCAN` and `UNLINK`
 after earlier mutations. Redis keys use the `v2` namespace, and tagged JSON

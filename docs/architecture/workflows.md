@@ -86,7 +86,7 @@ Ban differs from the shared reason flow:
 - The reason must be supplied in the command message.
 - Proof is required by UI (`skip_allowed=False`).
 - Photo/video albums are buffered by `media_group_id` and flushed after `cfg.album_debounce`.
-- `_execute_ban()` creates or updates the `bans` document, uploads proof, applies bans to active groups with `fan_out()`, and posts the audit log.
+- `_execute_ban()` uploads proof, then writes the `bans` document and posts the audit log in parallel (`_execute_new_ban` / `_execute_ban_update` return `(log_msg_id, db_ok)`). When the database write fails the flow aborts before `fan_out()` so no group is touched. Only after the record lands does it fan out bans to active groups with `fan_out()`, then edit the prompt summary and DM the appeal link.
 
 ```mermaid
 flowchart TD
@@ -187,9 +187,11 @@ Appeal flow requirements:
 
 - Entry is `/start appeal_<ban_id>` in private chat.
 - The user must have an active ban matching the deep-link ban ID.
-- The appeal text must start with `#appeal` and include `Log link:`, `Clarification:`, and `Agreement:`.
+- The appeal text must start with `#appeal` (case-insensitive); when the ban carries a `log_message_id`, the text must also reference that ID as a standalone number. Section labels (`Log link:`, `Clarification:`, `Agreement:`) are requested by the instructions but not parsed semantically.
+- Submit revalidates pending-review and rejection-cooldown state, then claims the review slot atomically (`set_review_if_absent`).
 - A review card is posted to `APPEAL_DISCUSSION_TOPIC` in `MAIN_GROUP`.
-- Approve calls unban logic and notifies the user; reject marks the appeal reviewed and notifies the user.
+- Approve runs an inline deactivate-plus-fan-out sequence mirroring `execute_unban` and notifies the user; reject records the rejector first, then notifies the user.
+- Non-deciding taps answer with a popup and never edit the shared card.
 
 ```mermaid
 flowchart TD
@@ -200,8 +202,8 @@ flowchart TD
     Wait -->|cancel or timeout| End[ConversationHandler.END]
     Post --> End
     Post --> Review[Staff reviewer sees card]
-    Review -->|Approve| Unban[execute_unban + DM user]
-    Review -->|Reject| Reject[Mark reviewed + DM user]
+    Review -->|Approve| Unban[Inline deactivate + fan-out mirroring execute_unban + DM user]
+    Review -->|Reject| Reject[set_rejected_by, then mark reviewed + DM user]
     Unban --> LogChat[Post audit log]
     Reject --> LogChat
 ```

@@ -124,7 +124,7 @@ Date: <utc>
 
 ### User Bans (`stats_bans:<page>` and `stats_ban_item:<page>:<idx>[:stable]`)
 
-`Stats.bans_list(page)` paginates `bans_db.active_bans()`. The list is ordered newest first via the existing index. The page footer adds a `[ Search ]` button that opens the search panel. Numbered buttons open `Stats.ban_detail(page, idx)`, which reuses `helper/ban_info.build_ban_detail` and exposes a `View Proof` URL when proof exists.
+`Stats.bans_list(page)` paginates `bans_db.active_bans()`. The list is ordered newest first via the existing index. The page footer adds a `[ Search ]` button that opens the search panel. Numbered buttons open `Stats.ban_detail(page, idx, stable)`, which reuses `helper/ban_info.build_ban_detail` and exposes a `View Proof` URL when proof exists. When the button carries the stable ban ID, the detail view fetches the record directly via `bans_db.get_ban` (one indexed read, immune to list shifts); missing or inactive records report not-found, matching the list-derived path.
 
 ### Search panel (`stats_bans_search`, `stats_search_*`)
 
@@ -152,7 +152,7 @@ class Stats:
     @classmethod async def chats_list(page) -> tuple[str, InlineKeyboardMarkup]
     @classmethod async def chat_detail(bot, page, idx, stable=None) -> tuple[str, InlineKeyboardMarkup]
     @classmethod async def bans_list(page) -> tuple[str, InlineKeyboardMarkup]
-    @classmethod async def ban_detail(page, idx) -> tuple[str, InlineKeyboardMarkup]
+    @classmethod async def ban_detail(page, idx, stable=None) -> tuple[str, InlineKeyboardMarkup]
     @classmethod def    open_search(ctx, q) -> tuple[str, InlineKeyboardMarkup]
     @staticmethod      clear_search(ctx) -> None
     @classmethod async def search_run(query) -> list[dict]

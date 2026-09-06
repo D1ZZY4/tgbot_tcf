@@ -37,6 +37,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Documentation
 
+- **Ban doc sync** (`docs/features/moderation/banning.md`, `docs/features/workflow-overview.md`, `docs/architecture/workflows.md`, `docs/features/moderation/unbanning.md`): `banning.md` and `workflow-overview.md` mermaids showed fan-out before the log write while the code writes the `bans` record and posts the log in parallel before `fan_out()`; both diagrams now show store-plus-log then fan-out then summary/DM. `banning.md` documents the reply-reason rule and the database fail-closed path. `workflows.md` ban paragraph documents the `(log_msg_id, db_ok)` return and abort-before-fan-out. `unbanning.md` drops the stale `unban_flow.py:30-146` line range.
+
 - **README rewrite** (`README.md`): replaced the generated-sounding long form (full 25-row config table, per-workflow CI detail, mermaid diagram, repo tree, 11-link index) with a concise engineer-facing version: one-line value proposition, requirements, copy-paste quick start, six concrete feature bullets with real command names, required-only config table with a pointer to `config.env.example` and the setup guide, short run/deploy/health sections, full validation block, and six curated doc links. All claims verified against `pyproject.toml`, `config.env.example`, `docker-compose.yml`, `tcbot/alive.py`, and the command modules. No behavior change.
 
 - **Warns help staff note** (`tcbot/modules/warnings.py`): `/tcwarn` help now states that staff targets are demoted first and exempted from the auto-ban.
@@ -48,6 +50,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 - **Repo activity badge** (`README.md`): added a Repobeats analytics image under a new `Repo activity` section using the configured embed URL.
 
 - **uv run commands** (`README.md`, `.agents/rules/tooling-validation.md`, `.agents/rules/docs-rules.md`): run, lint, and type-check commands now use the `uv run` prefix (`uv run python -m tcbot`, `uv run ruff ...`, `uv run --with pyright pyright ...`), matching the Replit entrypoint in `.replit`. The `--with` flag is needed because pyright is not a project dependency (verified: 0 errors).
+
+- **Appeal doc sync** (`docs/features/appeals.md`, `docs/features/moderation/unbanning.md`, `docs/features/workflow-overview.md`, `docs/architecture/workflows.md`, `docs/architecture/database.md`): `appeals.md` now documents the submit-time pending/cooldown revalidation, the atomic review-slot claim with loser cleanup, the stay-open retry after total delivery failure, alert-only non-deciding taps, the outage retry reply, the missing-owner lockout exemption, the approve abort on DB-deactivation failure with per-notification failure logs, and the reject ordering (`set_rejected_by` first, then the parallel DM/edit/clear, then the log edit) instead of the old single-gather claim. `unbanning.md` no longer claims `execute_unban` is reused by the appeal flow (the approve path mirrors it inline) in all three places. `workflows.md` and `workflow-overview.md` fixed the same reuse claim and the overstated required-sections check (only the `#appeal` prefix plus the log-ID reference are validated). `database.md` lists `set_review_if_absent`.
 
 ### Fixed
 

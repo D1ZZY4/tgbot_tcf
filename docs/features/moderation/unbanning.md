@@ -27,7 +27,7 @@ flowchart TD
 
 ## Purpose
 
-`/tcunban` clears an active federation ban by deactivating the underlying `bans` records and unbanning the target across every active connected group plus the primary groups (`cfg.main_group`, `cfg.exec_group`). The same `execute_unban` function is called from both the manual command path and the appeal-approve path.
+`/tcunban` clears an active federation ban by deactivating the underlying `bans` records and unbanning the target across every active connected group plus the primary groups (`cfg.main_group`, `cfg.exec_group`). The appeal-approve path runs its own inline sequence that mirrors `execute_unban` (deactivate, primary-group backfill, fan-out, logs); it does not call `execute_unban` directly.
 
 The Developer minimum rank (instead of Tester) is enforced because unban is irreversible at the database level and a low-rank moderator could otherwise quietly undo a Founder ban.
 
@@ -74,13 +74,13 @@ ident, pre_ban, role_result = await asyncio.gather(
 )
 ```
 
-When the refusal check passes, the pre-fetched `pre_ban` is passed straight to `execute_unban(..., pre_ban=pre_ban)`. The `pre_ban` argument is optional; callers without a pre-fetch (e.g. the appeal flow) get the default `None` and `execute_unban` performs its own `get_active_ban`.
+When the refusal check passes, the pre-fetched `pre_ban` is passed straight to `execute_unban(..., pre_ban=pre_ban)`. The `pre_ban` argument is optional; callers without a pre-fetch get the default `None` and `execute_unban` performs its own `get_active_ban`. (The appeal-approve path never calls `execute_unban`; it inlines a mirroring deactivate-plus-fan-out sequence.)
 
 The Developer minimum is intentional: unbanning a higher-ranked target would silently invert the role-vs-state invariant because unban also clears all active bans for the user, which is irreversible.
 
 ## `execute_unban` behavior
 
-`execute_unban(update, ctx, target_id, target_fname, *, pre_ban=None)` lives in `tcbot/modules/helper/workflows/unban_flow.py:30-146`. The executor:
+`execute_unban(update, ctx, target_id, target_fname, *, pre_ban=None)` lives in `tcbot/modules/helper/workflows/unban_flow.py`. The executor:
 
 1. Uses the caller-supplied `pre_ban` when present, otherwise falls back to `db.bans_db.get_active_ban(target_id)`.
 2. If no active ban is found, replies `<user> has no active federation ban.` and stops. This guard prevents a misleading "removed from N/M groups" reply for a no-op.
@@ -104,8 +104,8 @@ Unban uses three `bans_db` helpers:
 
 | Helper | Purpose |
 |---|---|
-| `get_active_ban(user_id)` | Returns the newest active ban document (sorted by `timestamp`, then `ban_id` descending). Used by both the manual command and the appeal flow. |
-| `deactivate_all_active_bans(user_id)` | Deactivates every active ban for the user in one `update_many` write. Returns the number of bans deactivated. Used so duplicate active records (from earlier race conditions) are cleared in one operation. |
+| `get_active_ban(user_id)` | Returns the newest active ban document (sorted by `timestamp`, then `ban_id` descending). Used by the manual command path and revalidated by the appeal flow. |
+| `deactivate_all_active_bans(user_id)` | Deactivates every active ban for the user in one `update_many` write. Returns the number of bans deactivated. Used by the manual command and mirrored by the appeal-approval inline sequence so duplicate active records (from earlier race conditions) are cleared in one operation. |
 | `make_ban_id()` | Not used here; only listed because the helper file is shared. |
 
 The scheduler cancel call targets `unban.<ban_id>`. It is a no-op when no schedule exists; the current ban command does not create timed-ban schedules, so this call is defensive infrastructure for when timed bans are added.
@@ -159,5 +159,5 @@ Key behaviors to keep in mind:
 13. The unban log is sent to `cfg.logs` with `parse_logmsg.unban_log`.
 14. `/tcunban` does not edit any pending appeal review card.
 15. Federation log send failure does not roll back the ban deactivation.
-16. The same `execute_unban` is reused by the appeal flow with `pre_ban=None` so it falls back to its own `get_active_ban` call.
+16. The appeal-approve path mirrors `execute_unban` inline (deactivate, primary-group backfill, fan-out, logs) instead of calling it; both abort the fan-out when the database deactivation fails.
 17. A staff target (Admin/Developer/Tester) with an active ban (re-promoted while banned) is demoted first (`Demote.execute(trigger=None)`) so the stale ban can be cleared; without an active ban the staff refusal stands, and a failed ban re-read keeps the refusal.

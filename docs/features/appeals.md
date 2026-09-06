@@ -92,14 +92,27 @@ Appeal messages have a **maximum length of 2000 characters**. Messages that exce
 
 ## Submission side effects
 
-When a valid appeal message is submitted:
+When a valid appeal message is submitted, the bot first revalidates the
+fresh ban record: the ban must still be active, must not have gained a fresh
+pending review while the user was typing (a concurrent submit from another
+session), and must not be inside the 24-hour rejection cooldown. Any of
+those states ends the session with the matching reply instead of posting a
+duplicate review card.
+
+When the checks pass:
 
 1. The user's appeal message is forwarded to the configured appeals destination (`cfg.appeals`).
 2. A staff review card is posted to `cfg.main_group`, optionally inside `cfg.appeal_discussion_topic`.
 3. A submitted-appeal log is posted to `cfg.logs`.
-4. The ban record is updated with review/log metadata when those messages are successfully sent.
-5. The original DM instruction message is edited to confirm submission.
-6. The user is cached/updated in `users_cache`.
+4. The pending-review slot is claimed atomically with `bans_db.set_review_if_absent`, so a concurrent duplicate submit cannot overwrite the winner and orphan its card. The loser deletes its own orphan review card best-effort and is told the appeal is already pending.
+5. Appeal-log metadata is stored with `bans_db.set_appeal_log_msg` when the log post succeeded.
+6. The original DM instruction message is edited to confirm submission.
+7. The user is cached/updated in `users_cache`.
+
+If both the review post and the appeal-log post fail, the instruction
+message is edited to a delivery-failure reply and the conversation stays in
+`WAITING_APPEAL` with its state intact, so the user can retry by sending
+another `#appeal` message without reopening the deep link.
 
 The review card contains two inline buttons:
 
@@ -136,7 +149,8 @@ The following fields are read or updated on ban documents:
 
 The update helpers involved are:
 
-- `bans_db.set_review(ban_id, review_msg_id)`
+- `bans_db.set_review_if_absent(ban_id, review_msg_id)` (atomic claim; returns whether this submit won the review slot)
+- `bans_db.set_review(ban_id, review_msg_id)` (unconditional write; kept for backward compatibility)
 - `bans_db.set_appeal_log_msg(ban_id, appeal_log_msg_id, appeal_link=...)`
 - `bans_db.deactivate_all_active_bans(user_id)` on approval (clears all active records atomically)
 - `users_cache.upsert_user(...)` after submission
@@ -145,14 +159,30 @@ If the review post fails, `review_message_id` is not stored. If the appeal-log p
 
 ## Staff review rules
 
-Appeal decisions are handled by `appeal.on_decision` and are registered outside the conversation handler. Only users for whom `users_roles.is_staff(user_id)` returns true may use the review buttons. In this codebase, `is_staff` means Founder/owner or Admin; Developer and Tester custom roles are not included by that helper.
+Appeal decisions are handled by `appeal.on_decision` and are registered outside the conversation handler. Only Founder or Admin reviewers (effective role `founder`/`admin` via `users_roles.get_effective_role`) may use the review buttons. In this codebase that matches `is_staff` semantics; Developer and Tester custom roles are not included.
+
+A role-lookup outage fails closed with a retry alert instead of an authorization verdict, so a transient database blip is never misreported as "not authorized".
+
+Taps that do not decide anything never edit the shared review card; they
+answer the callback query with a popup alert so the card stays actionable
+for staff:
+
+- Taps from non-staff users.
+- Taps inside the 12-hour banning-admin priority window by a different admin.
+- Repeat taps after the appeal was already decided (the winner's verdict edit is preserved).
+- Taps during a role-lookup outage.
+
+The only resolved tap that edits the card is a stale one: an inactive ban
+that still carries a live review marker (left behind by a manual `/tcunban`,
+which never touches review state). That tap clears the marker best-effort
+and updates the card to the already-resolved text.
 
 The original banning admin gets a 12-hour priority window after the appeal review timestamp is set:
 
 - During the first 12 hours, only the `admin_user_id` stored on the ban can approve or reject.
 - The original banning admin is always allowed during that window.
-- After 12 hours, any staff user accepted by `is_staff` can decide.
-- If `review_timestamp` or `admin_user_id` is missing, the lock does not apply.
+- After 12 hours, any Founder/Admin reviewer can decide.
+- If `review_timestamp` is missing, or `admin_user_id` is missing or zero (legacy record), the lock does not apply.
 
 The callback handler always answers the callback query before continuing once it has parsed a valid decision action.
 
@@ -160,13 +190,18 @@ The callback handler always answers the callback query before continuing once it
 
 When a staff member approves an appeal:
 
-1. All active bans for the user are deactivated with `bans_db.deactivate_all_active_bans(user_id)`, which clears any duplicate active records in one atomic operation.
-2. Active connected groups are fetched from `groups_db.active_groups()`.
-3. The user is unbanned from every active group with `unban_chat_member(..., only_if_banned=True)` through bounded fan-out.
-4. The user receives a DM telling them the appeal was approved.
-5. The review message is edited to show who approved it and the inline keyboard is removed.
-6. The submitted-appeal log message is edited to an approved version when possible.
-7. A separate `Unban (via Appeal)` log is sent to the federation logs channel.
+1. All active bans for the user are deactivated with `bans_db.deactivate_all_active_bans(user_id)`, which clears any duplicate active records in one atomic operation. If this write fails, approval aborts before any group is touched (mirroring `execute_unban`): unbanning chats while the database still marks the user banned would split-brain and re-ban them on next join.
+2. Active connected groups are fetched from `groups_db.active_groups()`, with the primary groups (`cfg.main_group`, `cfg.exec_group`) appended when absent.
+3. The review marker is cleared with `bans_db.clear_review(ban_id)` so a concurrent second decision sees no live review and stands down.
+4. The user is unbanned from every group with `unban_chat_member(..., only_if_banned=True)` through bounded fan-out. Partial transient failures are logged at error level.
+5. The user receives a DM telling them the appeal was approved.
+6. The review message is edited to show who approved it and the inline keyboard is removed.
+7. The submitted-appeal log message is edited to an approved version when possible.
+8. A separate `Unban (via Appeal)` log is sent to the federation logs channel.
+
+Each notification in steps 5-8 is inspected separately and logged (warning for the user DM, card edit, and appeal-log update; error for the unban log), so a silent Telegram failure is visible to operators.
+
+Approval is a federation unban. It removes the Telegram ban across all connected groups and deactivates the persistent ban record. It runs its own inline deactivate-plus-fan-out sequence that mirrors `execute_unban`; it does not call `execute_unban` directly.
 
 Approval is a federation unban. It removes the Telegram ban across all connected groups and deactivates the persistent ban record.
 
@@ -174,14 +209,18 @@ Approval is a federation unban. It removes the Telegram ban across all connected
 
 When a staff member rejects an appeal:
 
-1. The ban remains active.
-2. The user receives a DM telling them the appeal was reviewed and not approved.
-3. The review message is edited to show who rejected it and the inline keyboard is removed.
-4. The submitted-appeal log message is edited to a rejected version when possible.
-5. `bans_db.clear_review(ban_id)` clears `review_message_id` and `review_timestamp` so the user can submit a new appeal.
-6. `bans_db.set_rejected_by(ban_id, admin.id, admin.first_name)` records the rejector's identity (`rejected_by_id`, `rejected_by_name`, `rejected_at`) on the ban document for the audit trail.
+1. `bans_db.set_rejected_by(ban_id, admin.id, admin.first_name)` records the rejector's identity (`rejected_by_id`, `rejected_by_name`, `rejected_at`) first and alone, so the 24-hour cooldown holds even if a later write fails.
+2. The ban remains active.
+3. The user receives a DM telling them the appeal was reviewed and not approved.
+4. The review message is edited to show who rejected it and the inline keyboard is removed.
+5. `bans_db.clear_review(ban_id)` clears `review_message_id` and `review_timestamp` so the user can submit a new appeal after the cooldown.
+6. The submitted-appeal log message is edited to a rejected version when possible.
 
-Steps 2-6 run in a single `asyncio.gather` so a DM failure does not block the review-message edit or the DB writes.
+Steps 3-5 run in a single `asyncio.gather` (after the target display name
+is resolved) so a DM failure does not block the review-message edit or the
+DB writes. Each side effect is inspected: a failed DM logs at warning level,
+a failed card edit at debug level, and a failed `clear_review` at error
+level (the pending review would still be in the database).
 
 Rejection does not deactivate the ban. The `review_message_id` and `review_timestamp` fields **are cleared** on rejection so the user may submit a subsequent appeal without being locked out.
 
@@ -215,7 +254,8 @@ If editing the existing appeal log fails, the bot attempts to send a new log mes
 - The log-link validation is number-based, not URL-domain-based; it checks for the stored log message ID as a standalone integer token.
 - If the forwarded appeal message cannot be linked, the review/log text uses `N/A` for the appeal link but still posts the review/log when possible.
 - If user DM notification fails during approval or rejection, the review/log operations still proceed because those calls use `asyncio.gather(..., return_exceptions=True)`.
-- If a ban was already deactivated before a decision, the review message is edited to show that the appeal is already resolved.
+- If a ban was already deactivated before a decision, a tap on a stale card (live review marker left by a manual unban) clears the marker and updates the card; any other already-decided tap only shows a popup so the recorded verdict is preserved.
+- Two staff decisions racing each other are serialized only by the pre-decision guard (active ban, live review, no prior rejection); a true simultaneous double-tap can still double-notify. The database writes themselves stay idempotent.
 
 ## Rejection cooldown
 
@@ -259,8 +299,11 @@ Important appeal behaviors to keep in mind:
 6. The 12-hour reviewer lock blocks a different admin inside the window.
 7. The original banning admin is allowed inside the 12-hour window.
 8. Any staff reviewer is allowed after 12 hours.
-9. Missing `review_timestamp` or missing `admin_user_id` disables the reviewer lock.
+9. Missing `review_timestamp` or missing/zero `admin_user_id` disables the reviewer lock.
 10. Uppercase `#APPEAL` reaches the expired-session branch when conversation state is missing.
 11. The module-level appeal builder uses the configured appeal log handle.
 12. After rejection, a 24-hour cooldown applies before the user can start a new appeal.
 13. Staff in anonymous admin mode can use appeal decision buttons but not bot commands.
+14. Non-deciding taps (outsiders, locked-out reviewers, repeat taps, outage retries) never edit the review card.
+15. Concurrent duplicate submits are resolved by an atomic review-slot claim; the loser is told the appeal is pending.
+16. A total delivery failure keeps the conversation open for an in-place retry.
