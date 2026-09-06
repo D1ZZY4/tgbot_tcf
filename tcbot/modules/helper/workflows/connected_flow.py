@@ -1,6 +1,6 @@
 # © Copyright 2024 - 2026 Transsion Core
 # © Copyright 2024 - 2026 Dizzy
-# © Copyright 2026 Ave Studio
+# © Copyright 2026 Ave Labs
 
 """Group connection flow: in-group join prompt, permission check, pending monitoring."""
 
@@ -186,7 +186,6 @@ class BuildConnection:
             mute_docs,
             admins_result,
             add_group_r,
-            _remove_pending_r,
         ) = await asyncio.gather(
             asyncio.wait_for(bot.get_chat(chat_id), timeout=TELEGRAM_LOOKUP_TIMEOUT),
             db.bans_db.active_ban_user_ids(),
@@ -195,7 +194,6 @@ class BuildConnection:
                 bot.get_chat_administrators(chat_id), timeout=TELEGRAM_LOOKUP_TIMEOUT
             ),
             db.groups_db.add_group(chat_id, chat_title, owner_id),
-            db.groups_db.remove_pending(chat_id),
             return_exceptions=True,
         )
         admins_list = (
@@ -205,6 +203,13 @@ class BuildConnection:
         # * Re-raise so callers can detect failure and avoid sending a false confirmation.
         if isinstance(add_group_r, BaseException):
             raise RuntimeError(f"add_group failed for chat {chat_id}") from add_group_r
+        # * Clear the pending row only after the group record lands. The two
+        # * calls ran in parallel before, so an add_group failure still wiped
+        # * the pending row and left the owner with no retry path but re-add.
+        try:
+            await db.groups_db.remove_pending(chat_id)
+        except Exception:
+            log.exception("remove_pending failed for chat %d after connect", chat_id)
         chat_username: str | None = (
             getattr(chat_result, "username", None)
             if not isinstance(chat_result, BaseException)

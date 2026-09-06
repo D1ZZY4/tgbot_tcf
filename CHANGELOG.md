@@ -33,6 +33,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Fixed
 
+- **Connect keeps pending row when registration fails** (`tcbot/modules/helper/workflows/connected_flow.py`): `complete_join` fanned `add_group` and `remove_pending` in parallel, so an `add_group` failure still wiped the pending row and left the owner with no retry path but re-adding the bot (same gather-ordering bug class already fixed on the prompt paths). `remove_pending` now runs only after the group record lands, with failures logged.
+
 - **Check profile renders Unknown on lookup failure** (`tcbot/modules/helper/workflows/check_flow.py`): DB exceptions coerced to `None`/`0`, so during an outage the profile showed "Active Ban: No" and zero counts for a banned user. Ban/mute reads now render "Unknown (lookup failed)" and a caveat line is appended when any counter failed, so operators retry instead of trusting the card. Success-path rendering unchanged.
 
 - **Checkme dead detail path removed** (`tcbot/modules/checking.py`): `cmd_checkme` carried a second ban-detail block after `if not ban: return` that could never execute (the active-ban branch above always returns), including a latent `ban.get` on a proven-`None` value. Removed; the live clean reply for non-staff, non-banned callers is preserved verbatim. The banned path now passes `admin_fname=None` so `_ban_summary` uses the cached banning-admin name instead of the hardcoded `"Admin"` literal.
