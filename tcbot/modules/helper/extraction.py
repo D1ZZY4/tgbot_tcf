@@ -11,6 +11,8 @@ import logging
 from datetime import datetime
 from typing import TYPE_CHECKING
 
+from telegram import Chat
+
 from tcbot import database as db
 from tcbot.modules.helper.identity import ANONYMOUS_BOT_ID, TELEGRAM_USER_ID
 from tcbot.utils.time_and_date import TELEGRAM_LOOKUP_TIMEOUT, to_utc, utc_now
@@ -18,7 +20,7 @@ from tcbot.utils.time_and_date import TELEGRAM_LOOKUP_TIMEOUT, to_utc, utc_now
 if TYPE_CHECKING:
     from collections.abc import Mapping
 
-    from telegram import Bot, Chat, ChatFullInfo, Message, Update, User
+    from telegram import Bot, ChatFullInfo, Message, Update, User
 
 log = logging.getLogger(__name__)
 
@@ -72,7 +74,8 @@ def has_reply_target(msg: Message) -> bool:
     from_user = reply.from_user
     if from_user is not None:
         return from_user.id not in (ANONYMOUS_BOT_ID, TELEGRAM_USER_ID)
-    return reply.sender_chat is not None
+    sender = reply.sender_chat
+    return sender is not None and sender.type != Chat.CHANNEL
 
 
 async def _best_name(uid: int, *primary: str | None) -> str:
@@ -136,7 +139,12 @@ async def extract_target(
 
         if not _skip_sender_chat and target_msg.sender_chat:
             c: Chat = target_msg.sender_chat
-            return c.id, c.title or await _best_name(c.id)
+            # * Channel senders are not actionable moderation targets:
+            # * ban/restrict expect user IDs, so a channel ID would only
+            # * create an unenforceable DB row. Fall through to args and
+            # * entities instead of returning it (mirrors has_reply_target).
+            if c.type != Chat.CHANNEL:
+                return c.id, c.title or await _best_name(c.id)
 
     # * Priority 2 & 3: Explicit args (full ID/username or partial name search)
     if args:

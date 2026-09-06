@@ -66,12 +66,18 @@ async def _handle_member(
         db.mutes_db.get_active_mute(member.id),
         return_exceptions=True,
     )
+    # * When an enforcement read fails we cannot prove the joiner is
+    # * clean, so the welcome below is skipped: greeting an unverified
+    # * user as safe is worse than staying silent until the next event.
+    _enforcement_blind = False
     if isinstance(ban, BaseException):
         log.error("get_active_ban failed on join for uid=%d: %s", member.id, ban)
         ban = None
+        _enforcement_blind = True
     if isinstance(mute, BaseException):
         log.error("get_active_mute failed on join for uid=%d: %s", member.id, mute)
         mute = None
+        _enforcement_blind = True
 
     if ban:
         # * Auto-demote before enforcing the chat-level ban, matching the
@@ -196,7 +202,7 @@ async def _handle_member(
                 chat.id,
             )
 
-    if greet:
+    if greet and not _enforcement_blind:
         try:
             await msg.reply_text(
                 f"Welcome, {mention(member.id, member.first_name, member.username)}. "

@@ -57,6 +57,14 @@ class Demote:
         """
         removed = await cls.remove_role(target_id, target_role)
         if not removed:
+            # * No row in the expected collection: normally already-gone
+            # * (safe to proceed), but loud so a stale-cache wrong-collection
+            # * case leaves a trace instead of silent role retention.
+            log.warning(
+                "Demote found no %s row for target=%d; proceeding",
+                target_role,
+                target_id,
+            )
             return False
 
         lc, lt = cfg.logs

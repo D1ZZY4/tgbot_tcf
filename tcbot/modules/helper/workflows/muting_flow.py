@@ -112,10 +112,16 @@ def fmt_duration(td: timedelta | None) -> str:
 
 async def _execute_mute(bot: Bot, update: Update, meta: dict) -> None:
     """Apply a federation-wide mute across all connected groups and edit the prompt to a summary."""
-    target_id = meta["mute_target_id"]
-    target_fname = meta["mute_target_fname"]
+    # * Defensive .get(): _exec_mute copies whatever mute_* keys survived in
+    # * user_data, so a stale or partially-cleared state must end here with
+    # * no side effect instead of raising KeyError into the error handler.
+    target_id = meta.get("mute_target_id")
+    admin_id = meta.get("mute_admin_id")
+    if not target_id or not admin_id:
+        log.warning("_execute_mute called with incomplete mute state; aborting")
+        return
+    target_fname = meta.get("mute_target_fname") or str(target_id)
     reason_text = meta.get("mute_reason") or replies.NO_REASON
-    admin_id = meta["mute_admin_id"]
     duration = meta.get("mute_duration")
     proof_msgs = meta.get("mute_proof_msgs")
     prompt_chat = meta.get("mute_prompt_chat")

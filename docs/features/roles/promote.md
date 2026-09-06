@@ -43,6 +43,8 @@ Aliases (matched in any prefix configured by `cfg.prefixes`):
 
 The target is resolved by `extraction.extract_target`; accepts a reply, user ID, or resolvable `@username`.
 
+A bare role token with no reply target (e.g. `/tcpromote developer`) is treated as role-only input: the command asks for an explicit target instead of fuzzy-matching the token against cached names, so a cached namesake can never be promoted by accident. Promote a namesake by ID, `@username`, or reply.
+
 ## Role aliases
 
 The first argument after the target accepts these tokens (case-insensitive):
