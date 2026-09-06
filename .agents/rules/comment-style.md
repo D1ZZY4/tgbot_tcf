@@ -90,6 +90,22 @@ Common section names include `Handlers`, `Commands`, `Retrieval`, `Mutations`,
 - Do not comment obvious constants.
 - Use handler labels only when they improve readability.
 
+## Em Dashes
+
+The em dash character (U+2014, `—`) is forbidden in every tracked file:
+Python code, comments, docstrings, string literals (including bot replies,
+audit logs, and error messages), Markdown, YAML, INI snippets, and skill
+docs. Use a hyphen (`-`), comma, colon, or restructure the sentence instead.
+
+The canonical section dividers in this file use the box-drawing character
+U+2500 (`─`), which is a different character and stays allowed.
+
+Scan before committing; the result must be empty:
+
+```bash
+rg -n "—" .
+```
+
 ## Markdown Documentation
 
 For files under `.agents/` and `docs/`:

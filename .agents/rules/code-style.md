@@ -201,3 +201,5 @@ Concurrency, `asyncio.gather()`, fan-out, timeouts, and cancellation follow
   `identity.classify`.
 - Hardcoding bot tokens, MongoDB URIs, passwords, API keys, webhook secrets,
   deployment chat IDs, or other credentials.
+- Using em dashes (U+2014) anywhere; see the character rule in
+  [`comment-style.md`](comment-style.md#em-dashes).

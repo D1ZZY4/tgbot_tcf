@@ -3,7 +3,7 @@
 Thank you for helping improve TCF Bot. This guide is written for **human
 contributors**. If you are an AI agent, start with [`AGENTS.md`](AGENTS.md)
 and the six canonical rule files under [`.agents/rules/`](.agents/rules/)
-instead — this file is the human-friendly summary, not the agent contract.
+instead: this file is the human-friendly summary, not the agent contract.
 
 ## Before You Start
 

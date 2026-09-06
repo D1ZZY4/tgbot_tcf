@@ -141,7 +141,7 @@ async def cmd_unban(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if refusal is not None:
         # * Staff targets are never federation-bannable, so "nothing to undo"
         # * is normally the right reply. Exception: the target was re-promoted
-        # * while banned (race or manual grant) — then the active ban blocks
+        # * while banned (race or manual grant); then the active ban blocks
         # * cleanup and greeting-time demote never runs (a banned-everywhere
         # * user cannot rejoin to trigger it). Demote first, then fall through
         # * to execute_unban. The speculative pre-fetch above may have failed,

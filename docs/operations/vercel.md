@@ -114,7 +114,7 @@ to `0`). Re-run after every redeploy that changes the project URL.
   a long-lived transport for production federations.
 - **Timeouts and Telegram retries.** Federation fan-out across many groups
   can approach the function limit; `maxDuration: 60` covers typical
-  federations on paid plans (Hobby clamps lower — upgrade for 50+ groups).
+   federations on paid plans (Hobby clamps lower, so upgrade for 50+ groups).
   If Telegram times out waiting, it **retries the update**, which can
   double-apply non-idempotent actions (notably `/tcwarn` increments; ban
   re-issues dedupe via the update path).

@@ -91,7 +91,7 @@ Diligence here is mandatory, not optional:
   time as work proceeds. Never leave the list stale and never ignore it.
 - Exactly one item is `in_progress` at any moment.
 - Mark an item `completed` the moment its work is actually done, including
-  its verification — diligently, every time, without being reminded.
+  its verification: diligently, every time, without being reminded.
   Never mark complete on intent, and never batch several completions into
   one update.
 - After completing an item, immediately continue to the next pending item.

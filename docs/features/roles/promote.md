@@ -105,7 +105,7 @@ The executor's role is enforced by the `@decorators.staff_only` decorator on `cm
 - Admin tries to assign Admin to someone who is already Admin (handled by the rank check above).
 - Promoting a user who is currently Admin into Developer/Tester (must demote first).
 
-The command-level handler `cmd_promote` rejects self-promotion, the bot itself, Telegram, and anonymous-admin targets before delegating. Other (third-party) bots are not detected — `extract_target` returns only an ID and name, so they classify as regular users and can be promoted; only staff can trigger this, and the role is removable via `/tcdemote`.
+The command-level handler `cmd_promote` rejects self-promotion, the bot itself, Telegram, and anonymous-admin targets before delegating. Other (third-party) bots are not detected: `extract_target` returns only an ID and name, so they classify as regular users and can be promoted; only staff can trigger this, and the role is removable via `/tcdemote`.
 
 ## Direct Founder promotion to Admin
 

@@ -58,7 +58,7 @@ rules elsewhere.
 ## Skill loading
 
 Skills in `.agents/skills/` auto-invoke on trigger match; never wait to be
-asked. When several skills match one task, load them all — never just the
+asked. When several skills match one task, load them all: never just the
 first or most obvious one. Prioritize by task relevance, then read every
 loaded skill's full instructions including all bundled references, never
 half. Compose multiple skills when one task spans multiple areas
@@ -158,7 +158,7 @@ This prompt alone is not enough. A new agent reaches full context only with:
 1. This `PROMPT.md` file.
 2. The full repository at the same commit (it contains `AGENTS.md`,
    `.agents/rules/`, `.agents/skills/`, `docs/`, and `CHANGELOG.md`,
-   which this prompt references — without them it is hollow).
+   which this prompt references: without them it is hollow).
 3. The explicit instruction to read the Canonical project references
    section first, in order, before any other action.
 4. The user's language for responses (currently Bahasa Indonesia).

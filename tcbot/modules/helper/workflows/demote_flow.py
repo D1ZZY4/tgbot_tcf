@@ -123,7 +123,7 @@ class Demote:
         :meth:`execute` and returns ``True`` when the caller may proceed.
         When the demote raises, logs the failure, tells the executor to
         demote manually, and returns ``False`` so the caller ends the
-        conversation without enforcing — a banned/muted/kicked user must
+        conversation without enforcing: a banned/muted/kicked user must
         never keep a federation role.
         """
         try:
