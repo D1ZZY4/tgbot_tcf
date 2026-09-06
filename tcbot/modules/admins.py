@@ -50,6 +50,10 @@ _MSG_CANCELLED = "Cancelled. No changes were made."
 _MSG_NO_PENDING = "No pending promotion requests."
 _ERR_REQUEST_NOT_FOUND = "Request not found or already resolved."
 _ERR_CLASSIFY_FAILED = "Classification check failed - please try again."
+_ERR_PROMOTE_NEEDS_TARGET = (
+    "Specify who to promote: reply to their message or give an ID/@username, "
+    "e.g. /tcpromote @user developer."
+)
 
 # ─────────────────────── Rate-limiter constants ──────────────────── #
 _RL_PERIOD_S: int = 30
@@ -156,6 +160,22 @@ async def cmd_promote(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     has_explicit_target = bool(args) and (
         args[0].lstrip("-").isdigit() or args[0].startswith("@")
     )
+    # * A bare role token with no reply target is ambiguous: priority-3
+    # * name search could resolve "developer" to an unrelated cached user
+    # * and promote a stranger. Treat it as role-only input and ask for an
+    # * explicit target instead; real namesakes are still promotable by
+    # * ID, @username, or reply.
+    if (
+        not has_explicit_target
+        and args
+        and not extraction.has_reply_target(msg)
+        and args[0].lstrip("@").lower() in ROLE_ALIASES
+    ):
+        try:
+            await msg.reply_text(_ERR_PROMOTE_NEEDS_TARGET)
+        except Exception as exc:
+            log.debug("cmd_promote needs-target reply failed: %s", exc)
+        return
     # * Executor role (founder/admin guaranteed by @staff_only) + target run in parallel
     _exec_r, _target_r = await asyncio.gather(
         db.users_roles.get_effective_role(admin.id),
@@ -167,6 +187,17 @@ async def cmd_promote(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if isinstance(_target_r, asyncio.CancelledError):
         raise _target_r
     executor_role = None if isinstance(_exec_r, BaseException) else _exec_r
+    if isinstance(_exec_r, BaseException):
+        # * Transient outage between the staff_only check and this read:
+        # * answer instead of going silently dead. A genuinely role-less
+        # * caller (revoked in the gap) gets None below and returns; the
+        # * decorator denies them properly on retry.
+        log.warning("cmd_promote executor role lookup failed: %s", _exec_r)
+        try:
+            await msg.reply_text(_ERR_ROLE_LOOKUP_FAILED)
+        except Exception as exc:
+            log.debug("cmd_promote lookup-fail reply failed: %s", exc)
+        return
     if executor_role is None:
         return
     if isinstance(_target_r, BaseException):
@@ -277,7 +308,10 @@ async def on_promote_role_btn(update: Update, ctx: ContextTypes.DEFAULT_TYPE) ->
     ``Promote.execute`` and edits the prompt to the result.
     """
     q = update.callback_query
-    if q is None or q.data is None:
+    if q is None:
+        return
+    if q.data is None:
+        await q.answer()
         return
     admin = update.effective_user
     if admin is None:
@@ -404,6 +438,16 @@ async def cmd_demote(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if isinstance(_target_r, asyncio.CancelledError):
         raise _target_r
     executor_role = None if isinstance(_exec_r, BaseException) else _exec_r
+    if isinstance(_exec_r, BaseException):
+        # * Same transient-outage rationale as cmd_promote above: answer
+        # * instead of going silently dead; a revoked caller returns on the
+        # * None path below and is denied by the decorator on retry.
+        log.warning("cmd_demote executor role lookup failed: %s", _exec_r)
+        try:
+            await msg.reply_text(_ERR_ROLE_LOOKUP_FAILED)
+        except Exception as exc:
+            log.debug("cmd_demote lookup-fail reply failed: %s", exc)
+        return
     if executor_role is None:
         return
     # * The None check above already narrows str | None to str for pyright;

@@ -19,7 +19,7 @@ from tcbot.database.documents import GroupDoc
 from tcbot.modules.helper import decorators, parse_logmsg, replies
 from tcbot.modules.helper.formatter import code, esc
 from tcbot.modules.helper.parse_editmsg import safe_reply
-from tcbot.utils.dispatch import count_errors, fan_out
+from tcbot.utils.dispatch import count_transient_errors, fan_out
 from tcbot.utils.prefixes import build_prefixed_filters, parse_cmd_args
 
 if TYPE_CHECKING:
@@ -108,7 +108,7 @@ async def cmd_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         log.exception("active_groups failed during broadcast")
         await safe_reply(
             msg,
-            "Could not load the group list due to a server error. Please try again.",
+            replies.ERR_GROUPS_LOAD_FAILED,
             log_label="cmd_broadcast groups-failed",
         )
         return
@@ -150,7 +150,9 @@ async def cmd_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
                 await ctx.bot.send_message(chat_id, broadcast_text)
 
     results = await fan_out([_send_one(grp) for grp in groups])
-    failed = count_errors(results)
+    # * Benign per-group refusals (bot removed, chat gone) are not operator
+    # * failures; count only transient errors like every other fan-out.
+    failed = count_transient_errors(results)
     success = len(results) - failed
 
     for grp, r in zip(groups, results, strict=False):
@@ -166,26 +168,27 @@ async def cmd_broadcast(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     lc, lt = cfg.logs
 
     # * send log and update status message in parallel
-    edit_coro = (
-        status.edit_text(
-            f"Broadcast sent to {code(str(success))} groups. Failed: {code(str(failed))}.",
-            parse_mode="HTML",
-        )
-        if status is not None
-        else asyncio.sleep(0)
-    )
-    edit_r, log_r = await asyncio.gather(
-        edit_coro,
-        ctx.bot.send_message(
-            lc,
-            parse_logmsg.broadcast_log(
-                admin.id, admin.first_name, preview, success, failed
-            ),
-            parse_mode="HTML",
-            message_thread_id=lt,
+    log_coro = ctx.bot.send_message(
+        lc,
+        parse_logmsg.broadcast_log(
+            admin.id, admin.first_name, preview, success, failed
         ),
-        return_exceptions=True,
+        parse_mode="HTML",
+        message_thread_id=lt,
     )
+    if status is not None:
+        edit_r, log_r = await asyncio.gather(
+            status.edit_text(
+                f"Broadcast sent to {code(str(success))} groups. "
+                f"Failed: {code(str(failed))}.",
+                parse_mode="HTML",
+            ),
+            log_coro,
+            return_exceptions=True,
+        )
+    else:
+        edit_r = None
+        (log_r,) = await asyncio.gather(log_coro, return_exceptions=True)
     if isinstance(edit_r, BaseException):
         log.debug("Broadcast status edit failed: %s", edit_r)
     if isinstance(log_r, BaseException):

@@ -16,7 +16,7 @@ from tcbot import cfg
 from tcbot import database as db
 from tcbot.modules.about import __about_msg__
 from tcbot.modules.groups import _render
-from tcbot.modules.helper import decorators, keyboards
+from tcbot.modules.helper import decorators, keyboards, replies
 from tcbot.modules.helper.formatter import bold, esc
 from tcbot.utils.prefixes import build_prefixed_filters
 
@@ -144,11 +144,23 @@ async def on_back_to_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
 async def _show_groups(q: CallbackQuery, *, detailed: bool) -> None:
     """Shared renderer for all group-menu callbacks."""
     # * q.answer() and active_groups() are independent; run in parallel.
-    _, groups = await asyncio.gather(
+    _, groups_r = await asyncio.gather(
         q.answer(), db.groups_db.active_groups(), return_exceptions=True
     )
-    if isinstance(groups, BaseException):
-        groups = []
+    if isinstance(groups_r, BaseException):
+        # * Never render an empty list from a failed read: during an outage
+        # * that would claim no groups are connected. Keep the back keyboard
+        # * so re-tapping the menu retries the fetch.
+        log.warning("_show_groups groups fetch failed: %s", groups_r)
+        try:
+            await q.edit_message_text(
+                replies.ERR_GROUPS_LOAD_FAILED,
+                reply_markup=keyboards.back_to_start_kb(),
+            )
+        except Exception as exc:
+            log.debug("_show_groups load-failed edit failed: %s", exc)
+        return
+    groups = groups_r
     if not groups:
         # * Already answered in the gather above; answering again would raise
         # * BadRequest (query already answered). Edit in place like the list

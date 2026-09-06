@@ -183,7 +183,18 @@ class Promote:
         target_username: str | None = None,
     ) -> tuple[bool, str]:
         """Enqueue an Admin promotion request and notify the Founder (DM, then fallback to log)."""
-        existing = await db.queues_db.get_request(target_id)
+        try:
+            existing = await db.queues_db.get_request(target_id)
+        except Exception:
+            # * Transient read blip: fall through to the enqueue below rather
+            # * than dying silently. The partial-unique pending index makes
+            # * this safe: a lost race surfaces as DuplicateKeyError and gets
+            # * the same "already pending" reply as a pre-check hit.
+            log.warning(
+                "request_admin pre-check failed for target=%d; relying on unique index",
+                target_id,
+            )
+            existing = None
         if existing:
             return False, (
                 f"There's already a pending promotion request for "

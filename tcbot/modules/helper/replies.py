@@ -33,6 +33,12 @@ ERR_GROUP_NOT_FOUND = "Group not found or already removed."
 ERR_PERM_EXPIRED = "You no longer have permission to do this."
 ERR_UNKNOWN_ROLE = "Unknown role."
 
+# ───────────────────────── Server Errors ────────────────────────── #
+
+ERR_GROUPS_LOAD_FAILED = (
+    "Could not load the group list due to a server error. Please try again."
+)
+
 # ──────────────────────── Context / Scope ───────────────────────── #
 
 CONTEXT_BOT_OR_GROUP = "Bot PM, exec group, or any connected group."

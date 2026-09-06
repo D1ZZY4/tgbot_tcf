@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING
 
 from telegram.ext import CallbackQueryHandler, ContextTypes, MessageHandler
 
@@ -26,6 +26,8 @@ from tcbot.utils.time_and_date import fmt_dt
 if TYPE_CHECKING:
     from telegram import Update
 
+    from tcbot.database.documents import BanDoc
+
 log = logging.getLogger(__name__)
 
 # ─────────────────────── Rate-limiter constants ──────────────────── #
@@ -38,6 +40,9 @@ _RL_CHECK_CB_LIMIT: int = 20
 
 _ERR_BAN_INACTIVE = "This ban is no longer active."
 _ERR_BAN_NOT_FOUND = "Ban record not found."
+_ERR_STATUS_RETRY = (
+    "I couldn't verify your ban status right now. Please try again in a moment."
+)
 
 # ────────────────────── Module & Help Message ───────────────────── #
 
@@ -91,7 +96,7 @@ __help__: replies.HelpEntry = {
 
 
 async def _ban_summary(
-    ban: dict[str, Any],
+    ban: BanDoc,
     user_id: int,
     user_fname: str,
     admin_fname: str | None = None,
@@ -118,9 +123,10 @@ async def _ban_summary(
         admin_fname = admin_fname_cached or str(aid)
 
     proof_chat, proof_thread = cfg.proofs
+    proof_msg_id = ban.get("proof_message_id")
     proof_link = (
-        message_link(proof_chat, ban["proof_message_id"], proof_thread)
-        if ban.get("proof_message_id") is not None
+        message_link(proof_chat, proof_msg_id, proof_thread)
+        if proof_msg_id is not None
         else None
     )
 
@@ -168,17 +174,25 @@ async def cmd_checkme(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     )
     if isinstance(user_role, BaseException):
         user_role = None
+    # * Never render a clean bill of health from a failed read: during an
+    # * outage a coerced None would tell a banned user "You're clean" (same
+    # * defect class as the /check Unknown rendering). Fail closed with a
+    # * retry notice instead; the staff branches below stay unreachable on
+    # * this path because nothing about the caller could be verified.
     if isinstance(ban, BaseException):
-        ban = None
+        log.warning("checkme ban lookup failed for user=%d: %s", user.id, ban)
+        try:
+            await msg.reply_text(_ERR_STATUS_RETRY)
+        except Exception as exc:
+            log.debug("checkme retry reply failed for user %d: %s", user.id, exc)
+        return
 
     # * If the caller has an active ban, ALWAYS show the ban summary with
     # * the appeal button -- even for staff. A banned staff member still
     # * needs the appeal link, and the staff-flavoured early-returns below
     # * would otherwise tell them "you're fine" while they are banned.
     if ban is not None:
-        text, proof_link = await _ban_summary(
-            cast("dict[str, Any]", ban), user.id, fname, None
-        )
+        text, proof_link = await _ban_summary(ban, user.id, fname, None)
         try:
             await msg.reply_text(
                 text,
@@ -253,7 +267,16 @@ async def on_checkme_detail(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
         q.answer(), db.bans_db.get_ban(ban_id), return_exceptions=True
     )
     if isinstance(ban, BaseException):
-        ban = None
+        # * Never clobber the live ban card from a failed read: an outage
+        # * is not proof the ban went inactive. Answer with a retry popup
+        # * (mirroring the appeal-review outage path) and leave the card
+        # * untouched so the appeal button stays available.
+        log.warning("checkme_detail ban lookup failed for %s: %s", ban_id, ban)
+        try:
+            await q.answer(_ERR_STATUS_RETRY, show_alert=True)
+        except Exception as exc:
+            log.debug("checkme_detail retry answer failed: %s", exc)
+        return
     if not ban or not ban.get("is_active"):
         try:
             await q.edit_message_text(_ERR_BAN_INACTIVE, reply_markup=None)
@@ -261,7 +284,7 @@ async def on_checkme_detail(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
             log.debug("checkme_detail error edit failed: %s", exc)
         return
 
-    text, proof_link = await build_ban_detail(cast("dict[str, Any]", ban))
+    text, proof_link = await build_ban_detail(ban)
     await safe_edit_cb(
         q, text, reply_markup=keyboards.checkme_detail_back_kb(ban_id, proof_link)
     )
@@ -292,7 +315,15 @@ async def on_checkme_back(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
         q.answer(), db.bans_db.get_ban(ban_id), return_exceptions=True
     )
     if isinstance(ban, BaseException):
-        ban = None
+        # * Same card-preservation rationale as on_checkme_detail above: a
+        # * failed re-read keeps the refusal-worthy unknown, not a "not
+        # * found" verdict, and the summary card stays actionable.
+        log.warning("checkme_back ban lookup failed for %s: %s", ban_id, ban)
+        try:
+            await q.answer(_ERR_STATUS_RETRY, show_alert=True)
+        except Exception as exc:
+            log.debug("checkme_back retry answer failed: %s", exc)
+        return
     if not ban:
         try:
             await q.edit_message_text(_ERR_BAN_NOT_FOUND, reply_markup=None)
@@ -311,9 +342,7 @@ async def on_checkme_back(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> Non
         fname = str(uid)
     if isinstance(admin_fname, BaseException):
         admin_fname = "Admin"
-    text, proof_link = await _ban_summary(
-        cast("dict[str, Any]", ban), uid, fname, admin_fname
-    )
+    text, proof_link = await _ban_summary(ban, uid, fname, admin_fname)
     await safe_edit_cb(
         q,
         text,

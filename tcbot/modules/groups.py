@@ -23,7 +23,6 @@ from tcbot.modules.helper.formatter import bold, code, esc
 from tcbot.modules.helper.keyboards import tcgroups_kb
 from tcbot.modules.helper.parse_editmsg import safe_edit
 from tcbot.utils.prefixes import build_prefixed_filters
-from tcbot.utils.time_and_date import monotonic
 
 log = logging.getLogger(__name__)
 
@@ -31,10 +30,6 @@ log = logging.getLogger(__name__)
 _RL_PERIOD_S: int = 30
 _RL_CMD_LIMIT: int = 8
 _RL_CB_LIMIT: int = 15
-
-# * Per-user groups snapshot: invalidated by age so connect / disconnect /
-# * cleanup / migration become visible without restarting the conversation.
-_GROUPS_CACHE_TTL_S: float = 120.0
 
 # * Telegram caps message text at ~4096 chars; _render() truncates to this
 # * budget so large federations get a partial list instead of an error.
@@ -117,9 +112,7 @@ async def cmd_tcfgroups(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     except Exception:
         log.exception("active_groups failed during tcgroups")
         try:
-            await msg.reply_text(
-                "Could not load the group list due to a server error. Please try again."
-            )
+            await msg.reply_text(replies.ERR_GROUPS_LOAD_FAILED)
         except Exception as exc:
             log.debug("tcgroups groups-failed reply failed: %s", exc)
         return
@@ -129,10 +122,6 @@ async def cmd_tcfgroups(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         except Exception as exc:
             log.debug("tcgroups no-groups reply failed: %s", exc)
         return
-
-    if ctx.user_data is not None:
-        ctx.user_data["groups_cache"] = groups
-        ctx.user_data["groups_cache_at"] = monotonic()
 
     try:
         await msg.reply_text(
@@ -155,39 +144,30 @@ async def _toggle(
         return
 
     cbq_msg = q.message  # type: ignore[assignment]
-    groups = None
-    if ctx.user_data is not None:
-        cached_at = ctx.user_data.get("groups_cache_at", 0.0)
-        if monotonic() - float(cached_at) < _GROUPS_CACHE_TTL_S:
-            groups = ctx.user_data.get("groups_cache")
-    if groups:
-        # * Answer first so an expired query surfaces immediately instead of
-        # * hiding behind the edit result.
-        try:
-            await q.answer()
-        except Exception as exc:
-            log.debug("tcgroups toggle answer failed: %s", exc)
-            return
+    # * No per-user snapshot: active_groups() is already L1+L2 cached
+    # * (30 s), so every toggle reads the shared cache instead of a
+    # * per-user copy with its own divergent TTL.
+    # * q.answer() and active_groups() are independent; run in parallel.
+    _, groups_r = await asyncio.gather(
+        q.answer(), db.groups_db.active_groups(), return_exceptions=True
+    )
+    if isinstance(groups_r, BaseException):
+        # * Never render an empty list from a failed read: during an
+        # * outage that would claim "Count: 0" for a healthy federation.
+        # * Keep the toggle keyboard so re-tapping retries the fetch.
+        log.warning("tcgroups toggle groups fetch failed: %s", groups_r)
         await safe_edit(
             cbq_msg,  # type: ignore[arg-type]
-            _render(groups, detailed=detailed),
+            replies.ERR_GROUPS_LOAD_FAILED,
             reply_markup=tcgroups_kb(detailed=detailed),
         )
-    else:
-        # * q.answer() and active_groups() are independent; run in parallel.
-        _, groups = await asyncio.gather(
-            q.answer(), db.groups_db.active_groups(), return_exceptions=True
-        )
-        if isinstance(groups, BaseException):
-            groups = []
-        if ctx.user_data is not None:
-            ctx.user_data["groups_cache"] = groups
-            ctx.user_data["groups_cache_at"] = monotonic()
-        await safe_edit(
-            cbq_msg,  # type: ignore[arg-type]
-            _render(groups, detailed=detailed),
-            reply_markup=tcgroups_kb(detailed=detailed),
-        )
+        return
+    groups = groups_r
+    await safe_edit(
+        cbq_msg,  # type: ignore[arg-type]
+        _render(groups, detailed=detailed),
+        reply_markup=tcgroups_kb(detailed=detailed),
+    )
 
 
 @decorators.ratelimiter(limit=_RL_CB_LIMIT, period=_RL_PERIOD_S)

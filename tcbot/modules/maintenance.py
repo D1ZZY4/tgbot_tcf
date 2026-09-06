@@ -35,12 +35,6 @@ _RL_LEAVEALL_LIMIT: int = 1
 
 _MEMBERSHIP_CHECK_TIMEOUT = 3.0
 
-# * Retry reply when the group list cannot be loaded (DB outage). Denial
-# * texts must only fire on proven verdicts, never on lookup failures.
-_ERR_GROUPS_LOAD = (
-    "Could not load the group list due to a server error. Please try again."
-)
-
 
 # ────────────────────── Module & Help Message ───────────────────── #
 
@@ -96,14 +90,8 @@ __help__: replies.HelpEntry = {
 # * federated_groups collection. They are always-required destinations for
 # * primary-group enforcement (ban / unban / mute / warn fan-out) and for the
 # * federation log channel. They must not be torn down by leaveall / cleanup
-# * / disconnect / rmtc paths. Centralised here so all four call sites agree.
-def _is_primary_group(chat_id: int | None) -> bool:
-    """Return True if the chat is the main or exec group (never disconnect).
-
-    Thin alias over :meth:`cfg.is_primary_group`, kept so existing import
-    sites keep working. New code should call ``cfg.is_primary_group``.
-    """
-    return cfg.is_primary_group(chat_id)
+# * / disconnect / rmtc paths. Guarded by cfg.is_primary_group (single
+# * source of truth in tcbot/__init__.py) at every call site below.
 
 
 @dataclass(frozen=True)
@@ -200,7 +188,7 @@ async def _should_remove(bot: Bot, grp: GroupDoc) -> bool:
     chat_id = grp.get("chat_id")
     if chat_id is None:
         return True
-    if _is_primary_group(chat_id):
+    if cfg.is_primary_group(chat_id):
         return False
     try:
         member = await asyncio.wait_for(
@@ -245,7 +233,7 @@ async def cmd_leaveall(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if status_msg is not None:
             await safe_reply(
                 status_msg,
-                _ERR_GROUPS_LOAD,
+                replies.ERR_GROUPS_LOAD_FAILED,
                 log_label="leaveall groups-failed",
             )
         return
@@ -254,7 +242,7 @@ async def cmd_leaveall(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     # * depth: if a future change ever adds them to the collection, or if
     # * ``cfg.main_group`` is misconfigured, this prevents a global leaveall
     # * from cutting the bot out of its required enforcement destinations.
-    groups = [g for g in all_groups if not _is_primary_group(g.get("chat_id"))]
+    groups = [g for g in all_groups if not cfg.is_primary_group(g.get("chat_id"))]
     if not groups:
         status_msg = update.effective_message
         if status_msg is not None:
@@ -338,7 +326,7 @@ async def cmd_cleanup(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         log.exception("active_groups failed during cleanup")
         await safe_reply(
             reply_msg,
-            _ERR_GROUPS_LOAD,
+            replies.ERR_GROUPS_LOAD_FAILED,
             log_label="cleanup groups-failed",
         )
         return
