@@ -198,8 +198,12 @@ async def _should_remove(bot: Bot, grp: GroupDoc) -> bool:
         )
         return member.status in ("left", "kicked")
     except Exception as exc:
-        log.debug("Could not verify membership for %d: %s", chat_id, exc)
-        return True
+        # ! CRITICAL: fail closed. A transient Telegram/DB error must not look
+        # ! like "bot has left" or cleanup mass-deactivates healthy groups.
+        log.warning(
+            "Could not verify membership for %d, keeping group: %s", chat_id, exc
+        )
+        return False
 
 
 # ────────────────── Command Leave All </leaveall> ───────────────── #
