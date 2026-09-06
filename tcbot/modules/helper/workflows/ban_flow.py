@@ -212,8 +212,10 @@ async def _execute_ban(bot: Bot, msgs: list[Message], meta: dict[str, Any]) -> N
             logs_thread,
         )
     else:
+        # * Single canonical ban_id: generated once above and reused for the DB
+        # * record, the PM appeal link, and set_log_message_id below.
         log_msg_id = await _execute_new_ban(
-            bot, meta, proof_msg_id, proof_link, now, logs_chat, logs_thread
+            bot, meta, proof_msg_id, proof_link, now, logs_chat, logs_thread, ban_id
         )
 
     # * log_msg_id returned from _execute_ban_update / _execute_new_ban
@@ -511,6 +513,7 @@ async def _execute_new_ban(
     now: datetime,
     logs_chat: int,
     logs_thread: int | None,
+    ban_id: str,
 ) -> int:
     """Build log text, keyboard, and DB insert for a fresh ban."""
     target_id: int = meta.get("ban_target_id") or 0
@@ -518,7 +521,6 @@ async def _execute_new_ban(
     admin_id: int = meta.get("ban_admin_id") or 0
     admin_fname: str = meta.get("ban_admin_fname", "Admin")
     reason: str = meta.get("ban_reason", replies.NO_REASON)
-    ban_id = db.bans_db.make_ban_id()
     bot_username = bot.username or ""
 
     log_text = parse_logmsg.ban_log(
