@@ -200,6 +200,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 - **Moderation entries preserve task cancellation** (`tcbot/modules/banning.py`, `kicking.py`, `muting.py`, `warnings.py`, `unbanning.py`): the entry `gather(return_exceptions=True)` blocks treated `CancelledError` like any DB error (`isinstance(x, BaseException)`), silently ending the conversation on shutdown or timeout-scope cancellation instead of propagating. Every site now re-raises `CancelledError` first (matching the existing `admins.py`/decorator/database pattern); only genuine failures still end the handler. No success-path change.
 
+- **Ban record lands before the audit log post** (`tcbot/modules/helper/workflows/ban_flow.py`): the re-ban and fresh-ban helpers fanned the `bans` write and the logs-channel post in one gather, so a DB failure with a delivered post left a phantom ban card (dead appeal link, `/check` miss) that also weakened the appeal log-link gate. Both helpers now write first and post only on success, returning the same `(log_msg_id, db_ok)` contract; the fake-parallel old-admin name `create_task` (awaited immediately, zero overlap) is a direct await.
+
 </details>
 
 ## [6.5.0] - 2026-09-06

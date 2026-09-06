@@ -487,11 +487,8 @@ async def _execute_ban_update(
     old_log_msg_id = int(existing.get("log_message_id", 0))
     new_proof_msg_id = proof_msg_id if proof_msg_id else old_proof_msg_id
 
-    _old_admin_fname_task = asyncio.create_task(
-        db.users_cache.get_first_name(old_admin_id, "Admin")
-    )
     try:
-        old_admin_fname = await _old_admin_fname_task
+        old_admin_fname = await db.users_cache.get_first_name(old_admin_id, "Admin")
     except Exception:
         old_admin_fname = "Admin"
 
@@ -522,8 +519,12 @@ async def _execute_ban_update(
     send_kwargs: dict = {"parse_mode": "HTML", "message_thread_id": logs_thread}
     if kb:
         send_kwargs["reply_markup"] = kb
-    db_result, log_result = await asyncio.gather(
-        db.bans_db.update_ban(
+    # * Sequential, not gather: the DB row is authoritative and the log
+    # * post is observable. Racing them lets a DB failure leave a phantom
+    # * ban card in the logs channel (dead appeal link, /check miss), so
+    # * the log only goes out after the write succeeds.
+    try:
+        await db.bans_db.update_ban(
             ban_id,
             reason,
             admin_id,
@@ -531,21 +532,19 @@ async def _execute_ban_update(
             0,
             old_proof_msg_id,
             old_log_msg_id,
-        ),
-        bot.send_message(logs_chat, log_text, **send_kwargs),
-        return_exceptions=True,
-    )
-    db_ok = not isinstance(db_result, BaseException)
-    if not db_ok:
-        log.error("update_ban failed for ban_id=%s: %s", ban_id, db_result)
+        )
+    except Exception:
+        log.exception("update_ban failed for ban_id=%s", ban_id)
+        return 0, False
 
-    log_msg_id: int = 0
-    if not isinstance(log_result, BaseException):
-        log_msg_id = log_result.message_id
-        log.info("Ban log posted: ban_id=%s msg_id=%s", ban_id, log_msg_id)
-    else:
-        log.error("Ban log send failed: %s", log_result)
-    return log_msg_id, db_ok
+    try:
+        log_msg = await bot.send_message(logs_chat, log_text, **send_kwargs)
+    except Exception:
+        log.exception("Ban log send failed for ban_id=%s", ban_id)
+        return 0, True
+    log_msg_id = log_msg.message_id
+    log.info("Ban log posted: ban_id=%s msg_id=%s", ban_id, log_msg_id)
+    return log_msg_id, True
 
 
 async def _execute_new_ban(
@@ -591,24 +590,24 @@ async def _execute_new_ban(
     send_kwargs = {"parse_mode": "HTML", "message_thread_id": logs_thread}
     if kb:
         send_kwargs["reply_markup"] = kb
-    db_result, log_result = await asyncio.gather(
-        db.bans_db.create_ban(
+    # * Sequential, not gather: same phantom-log rationale as
+    # * _execute_ban_update above; the insert must land before the card.
+    try:
+        await db.bans_db.create_ban(
             target_id, reason, admin_id, proof_msg_id or 0, 0, ban_id
-        ),
-        bot.send_message(logs_chat, log_text, **send_kwargs),
-        return_exceptions=True,
-    )
-    db_ok = not isinstance(db_result, BaseException)
-    if not db_ok:
-        log.error("create_ban failed for ban_id=%s: %s", ban_id, db_result)
+        )
+    except Exception:
+        log.exception("create_ban failed for ban_id=%s", ban_id)
+        return 0, False
 
-    log_msg_id: int = 0
-    if not isinstance(log_result, BaseException):
-        log_msg_id = log_result.message_id
-        log.info("Ban log posted: ban_id=%s msg_id=%s", ban_id, log_msg_id)
-    else:
-        log.error("Ban log send failed: %s", log_result)
-    return log_msg_id, db_ok
+    try:
+        log_msg = await bot.send_message(logs_chat, log_text, **send_kwargs)
+    except Exception:
+        log.exception("Ban log send failed for ban_id=%s", ban_id)
+        return 0, True
+    log_msg_id = log_msg.message_id
+    log.info("Ban log posted: ban_id=%s msg_id=%s", ban_id, log_msg_id)
+    return log_msg_id, True
 
 
 # ───────────────── Proof collection state handlers ──────────────── #
