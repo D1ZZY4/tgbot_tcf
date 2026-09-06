@@ -79,7 +79,7 @@ _sched_error: BaseException | None = None
 # ══════════════════════════════════════════════════════════════════ #
 
 
-async def _expire_old_warns(warn_expiry_days: int) -> None:
+async def expire_old_warns(warn_expiry_days: int) -> None:
     """Delete expired warn records from both ``warns`` and ``warn_counts``.
 
     Both collections must be pruned together. Deleting only ``warn_counts``
@@ -88,7 +88,9 @@ async def _expire_old_warns(warn_expiry_days: int) -> None:
     making expiry a no-op. Deleting both collections atomically (in parallel)
     prevents this backfill from restoring stale counts.
 
-    Called daily by APScheduler when ``WARN_EXPIRY_DAYS > 0``.
+    Called daily by APScheduler when ``WARN_EXPIRY_DAYS > 0``, or on demand by
+    the serverless cron endpoint (``api/cron.py`` on Vercel) which cannot run
+    a persistent scheduler.
     """
     cutoff = utc_now() - timedelta(days=warn_expiry_days)
     counts_res, warns_res = await asyncio.gather(
@@ -215,7 +217,7 @@ def _register_periodic_schedules(
     """Register recurring maintenance schedules (idempotent via replace_existing)."""
     if warn_expiry_days > 0:
         scheduler.add_job(
-            _expire_old_warns,
+            expire_old_warns,
             trigger=IntervalTrigger(hours=24),
             id=_WARN_EXPIRY_SCHEDULE_ID,
             args=[warn_expiry_days],

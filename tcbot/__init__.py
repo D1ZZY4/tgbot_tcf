@@ -217,6 +217,7 @@ class Configs:
     warn_limit: int
     webhook_url: str
     webhook_secret: str
+    cron_secret: str
     community_channel_url: str
     community_group_url: str
     community_logs_url: str
@@ -338,6 +339,7 @@ class Configs:
             warn_limit=_int_from_env("WARN_LIMIT", 3, minimum=1),
             webhook_url=_auto_webhook_url(),
             webhook_secret=_resolve_webhook_secret(),
+            cron_secret=os.getenv("CRON_SECRET", "").strip(),
             community_channel_url=os.getenv("COMMUNITY_CHANNEL_URL", "").strip(),
             community_group_url=os.getenv("COMMUNITY_GROUP_URL", "").strip(),
             community_logs_url=os.getenv("COMMUNITY_LOGS_URL", "").strip(),
@@ -541,6 +543,26 @@ class _CfgAdapter:
         the current token, so Telegram stays in sync.
         """
         return self._c.webhook_secret
+
+    @property
+    def webhook_secret_explicit(self) -> str:
+        """Explicit WEBHOOK_SECRET from env (empty string when not configured).
+
+        Unlike :meth:`webhook_secret` this never falls back to a generated
+        token, so serverless receivers (which cannot re-register the webhook
+        on every cold start) can fail closed when no secret is configured.
+        """
+        return os.getenv("WEBHOOK_SECRET", "").strip()
+
+    @property
+    def cron_secret(self) -> str:
+        """Bearer token protecting the serverless cron endpoint (empty = not configured).
+
+        Compared against the ``Authorization: Bearer <token>`` header that
+        Vercel Cron sends when CRON_SECRET is set on the project. An empty
+        value leaves the endpoint unprotected; always set it in production.
+        """
+        return self._c.cron_secret
 
     @property
     def is_webhook_mode(self) -> bool:

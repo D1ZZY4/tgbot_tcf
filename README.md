@@ -81,6 +81,12 @@ The Flask keep-alive server binds to `0.0.0.0:${PORT}`. If `PORT` is unset, inva
 
 See [`replit.md`](replit.md) for Replit-specific setup notes and deployment checklist.
 
+## Vercel (Serverless)
+
+Native serverless deployment via `api/webhook.py` (Telegram updates) and `api/cron.py` (daily warn expiry), configured in `vercel.json`. Requires explicit `WEBHOOK_SECRET` and `CRON_SECRET`; dependencies install from `pyproject.toml` + `uv.lock` and Python `3.14` comes from `.python-version`.
+
+See [`docs/operations/vercel.md`](docs/operations/vercel.md) for setup, `setWebhook` registration, and serverless limitations (multi-step conversations are best-effort without instance affinity).
+
 ## Configuration
 
 Configuration is loaded from environment variables in `tcbot/__init__.py`. For local development, `python-dotenv` reads `config.env` if it exists. Startup fails fast when required runtime values such as `BOT_TOKEN`, `MONGODB_URI`, or `OWNER_ID` are missing.
@@ -94,7 +100,8 @@ For detailed environment variable formats and validation, see [`docs/getting-sta
 | `MONGODB_URI` | Yes | MongoDB connection string. |
 | `REDIS_URL` | No | Redis connection URL (e.g. `redis://localhost:6379/0`). Enables L2 distributed cache and Redis-backed rate limiting. Falls back to in-process rate limiting when absent. |
 | `WEBHOOK_URL` | Usually | Public HTTPS URL for Telegram webhook (e.g. `https://your-domain.com`). Required for webhook mode; omit only for local development (falls back to polling). |
-| `WEBHOOK_SECRET` | No | Secret token passed to `set_webhook` and validated on every incoming update (`X-Telegram-Bot-Api-Secret-Token` header). When omitted, the bot generates a random token at startup. |
+| `WEBHOOK_SECRET` | No | Secret token passed to `set_webhook` and validated on every incoming update (`X-Telegram-Bot-Api-Secret-Token` header). When omitted, the bot generates a random token at startup. **Required on Vercel** (serverless instances cannot re-register per cold start). |
+| `CRON_SECRET` | No | Bearer token protecting the Vercel cron endpoint (`/api/cron`). Leave empty only for local testing; always set it in production. |
 | `DB_NAME` | No | MongoDB database name, default `tcbot`. |
 | `COMMUNITY_NAME` | No | Display name used in bot messages and logs. |
 | `PREFIXES` | No | Python-style list of command prefixes, default `["/", "!", "."]`. |
@@ -153,10 +160,13 @@ For detailed architecture, see [`docs/architecture/repository-map.md`](docs/arch
 │   │   └── helper/           Formatters, decorators, keyboards, workflows
 │   │       └── workflows/    Conversation flows (`*_flow.py`)
 │   └── utils/                Logging, prefixes, dispatch, datetime helpers
+├── api/                      Vercel serverless endpoints (webhook, cron)
 ├── docs/                     Developer documentation grouped by category
 ├── .agents/                  Repository maintenance guidance and skills
 ├── config.env.example        Environment template
 ├── docker-compose.yml        Bot + MongoDB local compose setup
+├── vercel.json               Vercel functions, timeouts, and cron schedule
+├── .python-version           Pinned Python for Vercel and uv (3.14)
 ├── pyproject.toml            Project metadata, dependencies, Ruff
 ├── uv.lock                   Locked dependency graph
 ├── CONTRIBUTING.md           Contribution workflow and review checklist

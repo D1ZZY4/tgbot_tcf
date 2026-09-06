@@ -344,6 +344,36 @@ def _build_application(*, polling: bool) -> Application:
     return builder.build()
 
 
+# ────────────────────── Handler Registration ───────────────────── #
+# * Single source of truth for PTB handler wiring, shared by the
+# * long-lived transports (webhook/polling in main()) and the serverless
+# * adapter (tcbot/serverless.py imports _register_handlers).  Keep all
+# * app.add_handler / app.add_error_handler calls here so transports agree.
+
+
+def _register_handlers(app: Application) -> None:
+    """Attach the global rate limiter, module handlers, cache harvester, and error handler."""
+    # * Layer 1: Global per-user rate limiter - runs before every handler (group -1)
+    app.add_handler(
+        TypeHandler(Update, global_rate_limit_handler),
+        group=_HANDLER_GROUP_RATE_LIMITER,
+    )
+
+    # * Register all module handlers via tcbot.modules
+    for handler in get_handlers():
+        app.add_handler(handler)
+
+    # * Low-priority handler: cache every effective_user we observe.
+    # * Runs on every update (messages, callback queries, my_chat_member)
+    # * so future log messages and mention links resolve to real names.
+    app.add_handler(
+        TypeHandler(Update, _update_member_cache), group=_HANDLER_GROUP_CACHE
+    )
+
+    # * Layer 2: PTB global error handler - catches all unhandled handler exceptions
+    app.add_error_handler(_error_handler)
+
+
 # ────────────────────────── Webhook Mode ────────────────────────── #
 
 
@@ -472,26 +502,8 @@ def main() -> None:
         use_webhook = cfg.is_webhook_mode
         app: Application = _build_application(polling=not use_webhook)
 
-        # * Layer 1: Global per-user rate limiter - runs before every handler (group -1)
         stage = "handler registration"
-        app.add_handler(
-            TypeHandler(Update, global_rate_limit_handler),
-            group=_HANDLER_GROUP_RATE_LIMITER,
-        )
-
-        # * Register all module handlers via tcbot.modules
-        for handler in get_handlers():
-            app.add_handler(handler)
-
-        # * Low-priority handler: cache every effective_user we observe.
-        # * Runs on every update (messages, callback queries, my_chat_member)
-        # * so future log messages and mention links resolve to real names.
-        app.add_handler(
-            TypeHandler(Update, _update_member_cache), group=_HANDLER_GROUP_CACHE
-        )
-
-        # * Layer 2: PTB global error handler - catches all unhandled handler exceptions
-        app.add_error_handler(_error_handler)
+        _register_handlers(app)
 
         if use_webhook:
             log.info(

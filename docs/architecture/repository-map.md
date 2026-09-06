@@ -14,9 +14,12 @@ This page maps the repository structure and the service boundaries between packa
 ```text
 <project root>/
 ├── tcbot/                  Main Python package
+├── api/                    Vercel serverless endpoints (webhook, cron)
 ├── docs/                   Documentation grouped by purpose
 ├── pyproject.toml          Dependencies and Ruff config
 ├── uv.lock                 Locked dependency graph
+├── vercel.json             Vercel functions, timeouts, and cron schedule
+├── .python-version         Pinned Python for Vercel and uv (3.14)
 ├── config.env.example      Environment variable template
 ├── README.md               Project overview
 ├── CONTRIBUTING.md         Contribution workflow and review checklist
@@ -49,6 +52,7 @@ tcbot/
 ├── __init__.py             Environment loader and cfg adapter
 ├── __main__.py             PTB app setup, DB init, handler registration, webhook (polling fallback in local dev)
 ├── alive.py                Flask health endpoint and webhook receiver
+├── serverless.py           Vercel lifecycle: shared PTB app, update dispatch, cron expiry
 ├── database/
 │   ├── mongos.py           Motor client, collection accessor, indexes
 │   ├── bans_db.py          Federation ban records (incl. per-user history)

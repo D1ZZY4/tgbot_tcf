@@ -64,6 +64,7 @@ deployment, see [`../replit.md`](../replit.md). For contribution workflow, see
 | [Backup and restore](operations/backup-and-restore.md) | MongoDB backup, restore, post-restore checks, and security notes. |
 | [CI/CD workflows](operations/ci-cd.md) | GitHub Actions triggers, required secrets, notifications, and troubleshooting. |
 | [Performance](operations/performance.md) | Batch query patterns, cache and concurrency guidance, and measurement practices. |
+| [Vercel deployment](operations/vercel.md) | Native serverless deployment: webhook + cron endpoints, setup, and serverless limitations. |
 
 ### Reference
 

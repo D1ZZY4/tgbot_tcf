@@ -98,6 +98,7 @@ Current stack:
 │   ├── __init__.py           Environment config loader and `cfg` adapter
 │   ├── __main__.py           Runtime entry point, handler registration, webhook/polling transport
 │   ├── alive.py              Flask keep-alive and webhook receiver
+│   ├── serverless.py         Vercel lifecycle: shared PTB app, update dispatch, cron expiry
 │   ├── database/             MongoDB helpers, one file per collection/domain
 │   │   ├── users_cache.py    Member profile cache operations
 │   │   ├── users_roles.py    Role system: owners/admins/roles
@@ -158,9 +159,12 @@ Current stack:
 │       └── time_and_date.py    Central clock: UTC storage/display + monotonic measure
 ├── docs/                     Developer documentation grouped by category
 ├── .agents/                   Coding skills and style rules
+├── api/                       Vercel serverless endpoints (webhook, cron)
 ├── config.env.example        Environment variable template
 ├── docker-compose.yml        Local bot + MongoDB + Redis compose setup
 ├── Dockerfile                Container image definition
+├── vercel.json               Vercel functions, timeouts, and cron schedule
+├── .python-version           Pinned Python for Vercel and uv (3.14)
 ├── pyproject.toml            Dependencies and Ruff settings
 ├── uv.lock                   Locked dependency graph
 ├── pyrightconfig.json        pyright type checker configuration
