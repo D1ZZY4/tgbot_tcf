@@ -168,6 +168,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 - **Numeric-ID target resolution skips the live lookup on cache hits** (`tcbot/modules/helper/extraction.py`): every numeric-ID command paid a live `get_chat` round trip (up to the 3 s lookup timeout on a blip) even for known users. IDs are immutable, so a real cached name is now authoritative and the live call runs only on cache misses and legacy/bare-numeric fallbacks (verified: cache hit issues zero Telegram calls; `User <id>` and numeric fallbacks still fall through). Username resolution stays live-first because usernames can be recycled.
 
+- **MongoDB TLS pins the certifi CA bundle** (`tcbot/database/mongos.py`, `pyproject.toml`, `uv.lock`): startup crashed with `CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate` on hosts whose system CA store is empty or outdated (verified: 2 entries in `/etc/ssl/certs`, no `cert.pem`). The Motor client now passes `tlsCAFile=certifi.where()` (new direct dependency), proven end-to-end with a live TLS handshake plus `hello ok: 1.0` against the Atlas shard using the bundle while the system store fails identically to the crash. An explicit `tlsCAFile` in `MONGODB_URI` always wins; non-TLS schemes ignore the option. Verification is never disabled.
+
 </details>
 
 ## [6.5.0] - 2026-09-06

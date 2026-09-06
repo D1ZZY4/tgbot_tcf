@@ -178,6 +178,10 @@ Set `MONGODB_URI` in `config.env` or the host secret manager. Do not paste real 
 
 Check `MONGODB_URI`, network access, Atlas IP allowlists, and database credentials.
 
+### MongoDB `CERTIFICATE_VERIFY_FAILED` (`unable to get local issuer certificate`)
+
+The host's system CA store is empty or outdated, so the Atlas TLS chain cannot be verified. The bot pins TLS trust to the `certifi` Mozilla bundle (`tlsCAFile` in `tcbot/database/mongos.py`), which fixes minimal sandboxes without one. If this error persists, the `certifi` install is stale (`uv sync --frozen` refreshes it) or `MONGODB_URI` carries a conflicting TLS option; an explicit `tlsCAFile` in the URI always wins over the bundled default. Never disable TLS verification to work around this.
+
 ### `Module import failed for: ...`
 
 Check the named module's import traceback, missing dependencies, and top-level syntax before redeploying. Enabled modules should fail loudly rather than being skipped silently.

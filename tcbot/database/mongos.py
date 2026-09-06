@@ -13,6 +13,7 @@ import string
 from pathlib import Path
 from typing import TYPE_CHECKING, TypeVar
 
+import certifi
 from motor.motor_asyncio import (
     AsyncIOMotorClient,
     AsyncIOMotorCollection,
@@ -104,6 +105,15 @@ async def connect() -> None:
     """Establish MongoDB connection and initialize the global _db instance."""
     global _db
     _patch_dns_if_needed()
+    # * Pin TLS trust to the certifi Mozilla bundle. Sandboxes without a
+    # * usable system CA store (empty /etc/ssl/certs) fail Atlas handshakes
+    # * with CERTIFICATE_VERIFY_FAILED ("unable to get local issuer
+    # * certificate"); certifi is current where the system store is not.
+    # * Skipped when the URI already carries its own tlsCAFile so an
+    # * operator override always wins; ignored for non-TLS schemes.
+    client_kwargs: dict[str, object] = {}
+    if "tlscafile" not in cfg.mongodb_uri.lower():
+        client_kwargs["tlsCAFile"] = certifi.where()
     client = AsyncIOMotorClient(
         cfg.mongodb_uri,
         serverSelectionTimeoutMS=_MONGO_SERVER_SELECTION_MS,
@@ -116,6 +126,7 @@ async def connect() -> None:
         compressors=["zlib"],
         retryWrites=True,
         retryReads=True,
+        **client_kwargs,  # type: ignore[arg-type]
     )
     await _mongo_cb.call(client.admin.command("ping"))
     _db = client[cfg.db_name]
