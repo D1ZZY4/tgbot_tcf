@@ -286,6 +286,9 @@ async def cmd_warnlist(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     msg = update.effective_message
     if msg is None:
         return
+    admin = update.effective_user
+    if admin is None:
+        return
     args = parse_cmd_args(msg.text)
     target_id, target_name = await extraction.extract_target(update, args, ctx.bot)
     if not target_id:
@@ -294,6 +297,13 @@ async def cmd_warnlist(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         except Exception as exc:
             log.debug("cmd_warnlist no-target reply failed: %s", exc)
         return
+
+    role_result = await resolve_and_check(msg, admin.id, target_id, min_role="tester")
+    # * resolve_and_check replies on rejection and returns (None, None).
+    # * Read-only path: the rank check alone gates staff-history enumeration.
+    if role_result[0] is None:
+        return
+
     await execute_warnlist(update, ctx, target_id, target_name or str(target_id))
 
 
