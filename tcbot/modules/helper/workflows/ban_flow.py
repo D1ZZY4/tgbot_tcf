@@ -585,9 +585,18 @@ async def on_proof_received(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> i
     if msg is None:
         return WAITING_PROOF
 
+    # * Double-submit guard for albums mirrors the single-media flag below: a
+    # * rapid second album (distinct media_group_id) must not invoke
+    # * _execute_ban twice (double fan-out, double PM/log). The check-and-set
+    # * is synchronous, so concurrent updates cannot interleave between them.
+    # * First submission wins; _flush_album clears the flag when it finishes.
+    if ctx.user_data is not None and ctx.user_data.get("ban_executing"):
+        return ConversationHandler.END
+
     if msg.media_group_id:
         mgid = msg.media_group_id
         if mgid not in _albums and ctx.user_data is not None:
+            ctx.user_data["ban_executing"] = True
             meta_snapshot = dict(ctx.user_data)
             _albums[mgid] = []
             _album_meta[mgid] = meta_snapshot
