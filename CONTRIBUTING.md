@@ -40,9 +40,10 @@ uv sync --frozen
 ```
 
 Copy `config.env.example` to a local `config.env` when environment-based local
-development is needed. Use placeholders or local values only. Never commit
-`config.env`, tokens, passwords, database URIs, webhook secrets, or private
-chat IDs.
+development is needed. Use placeholders or local values only.
+
+> [!IMPORTANT]
+> Never commit `config.env`, tokens, passwords, database URIs, webhook secrets, or private chat IDs.
 
 Run the bot:
 
@@ -62,6 +63,9 @@ uv run python -m tcbot
 4. Keep user-facing bot messages in English and HTML parse mode.
 5. Update documentation and diagrams when behavior or structure changes.
 6. Add a concise entry under `[Unreleased]` in `CHANGELOG.md`.
+
+> [!CAUTION]
+> Moderation, role, and database changes can affect every connected group. Verify success and failure paths, alternate entry points, and state transitions; never dismiss a moderation bypass as an edge case.
 
 ## Validation
 
@@ -85,6 +89,9 @@ git diff --check
 
 If a validation command cannot run, include the exact command and error in the
 pull request description.
+
+> [!TIP]
+> CI runs these same checks and fails the pull request on violations. Run them locally before pushing.
 
 ## Pull Requests
 

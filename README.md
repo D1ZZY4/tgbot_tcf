@@ -40,7 +40,8 @@ Only three values are required. Everything else has a working default.
 
 Common optional values: `REDIS_URL` (enables the shared cache), `WEBHOOK_URL` (enables webhook transport, otherwise the bot polls), `PORT` (health server port, default `5000`), and the `PROOFS`, `LOGS`, `LOGS_ERRORS`, `APPEALS` log destinations, which each accept a chat ID or a `chat_id/thread_id` pair.
 
-Do not put tokens, connection strings, or private chat IDs in committed files. Use the platform secret manager on hosted deployments.
+> [!IMPORTANT]
+> Never commit real secrets. Keep `BOT_TOKEN`, `MONGODB_URI`, passwords, webhook secrets, and private chat IDs out of the repository; use the platform secret manager on hosted deployments.
 
 ## Running
 
@@ -60,6 +61,9 @@ The compose setup reads `.env`, so copy `config.env.example` to `.env` first. De
 
 In production set `WEBHOOK_URL` to the public HTTPS base URL so Telegram delivers updates to `POST /webhook`. Requests are validated against `WEBHOOK_SECRET`. On Vercel the webhook and the daily warn-expiry cron run as serverless functions; `WEBHOOK_SECRET` and `CRON_SECRET` are required there. See [`docs/operations/vercel.md`](docs/operations/vercel.md). On Replit keep secrets in Replit Secrets and use the same run command; see [`replit.md`](replit.md).
 
+> [!CAUTION]
+> Never run two live bot instances with the same token (for example polling locally while webhook mode is deployed). The transports fight over updates and Telegram reports `Conflict` errors.
+
 One pitfall to avoid: committing `config.env` with real values because local testing worked. Keep it untracked and put production values in the host secret manager instead.
 
 ## Health Check
@@ -68,6 +72,9 @@ The Flask keep-alive server binds to `0.0.0.0:${PORT}` (defaults to `5000` on un
 
 - `GET /` returns `OK` for uptime monitors.
 - `GET /health` returns subsystem status (MongoDB, Redis, scheduler, circuit breakers) as JSON, with HTTP 503 while degraded.
+
+> [!TIP]
+> Point uptime monitors at `GET /health`: the 503 status tells load balancers and watchdogs the instance needs attention without reading the body.
 
 ## Development
 
@@ -93,9 +100,14 @@ git diff --check
 
 ## Repo Activity
 
+<details>
+<summary>Contribution activity graph</summary>
+
 Contribution, issue, and pull request activity, rendered by Repobeats.
 
 ![Repobeats analytics image](https://repobeats.axiom.co/api/embed/1a7b88805412c20305e8076a29a737330bae83ec.svg "Repobeats analytics image")
+
+</details>
 
 ## License
 

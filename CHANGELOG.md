@@ -4,6 +4,9 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ## [Unreleased]
 
+<details open>
+<summary>Unreleased changes (click to collapse)</summary>
+
 ### Changed
 
 - **Health mongodb field follows the live circuit** (`tcbot/alive.py`): `is_connected()` is a sticky startup flag, so a partitioned MongoDB still read `ok` while only the overall verdict degraded via the breaker. The field now ANDs the live mongodb-breaker state.
@@ -151,7 +154,12 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 - **Warn/mute executors answer database outages** (`tcbot/modules/helper/workflows/warning_flow.py`, `muting_flow.py`, `tcbot/database/warns_db.py`): `add_warn`, the federation aggregate, warn count/list/reset reads, and the unmute guard propagated failures out of the conversation with no moderator reply. Each now replies with a retry notice (the aggregate failure reports the already-recorded warn honestly). `clear_warns`/`clear_all_warns` raise warns-delete failures instead of returning 0, so an outage is never misreported as an empty warn state (the previously dead `BaseException` check in the auto-ban path is live again); counter-delete failures stay error-logged but non-fatal. Executor asserts became guard returns.
 
+</details>
+
 ## [6.5.0] - 2026-09-06
+
+<details>
+<summary>6.5.0 changes (click to expand)</summary>
 
 ### Changed
 
@@ -224,7 +232,12 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 - **Audit doc sync** (`README.md`, `tcbot/__main__.py`, `tcbot/modules/warnings.py`, `docs/features/moderation/warnings.md`, `workflow-overview.md`, `muting.md`): `README` smart-mention row now matches `formatter.user_ref` (clickable full name only, no username variant); `docker-compose` corrected to `docker compose`; `__main__` scheduler comment corrected from APScheduler 4 to `3.11.3` + `MongoDBJobStore`; `/warns` access corrected from Anyone to Tester+ in help text and both feature docs to match the `basic_mod_only` + `resolve_and_check` gate; `muting.md` typos fixed (`proof/reof`, missing space) and `count_errors` corrected to `count_transient_errors`.
 - **Audit doc sync, round 2** (`docs/features/moderation/check.md`, `groups.md`, `kicking.md`, `muting.md`, `docs/features/roles/demote.md`, `docs/architecture/helpers.md`): `check.md` mermaid no longer references the nonexistent `appeals_db` module (appeals live in `bans`); `groups.md` `_render` quote now uses `bold()` HTML like the code instead of Markdown `**`; `helpers.md` username row no longer claims global-`@username` mentions (`user_ref` ignores usernames), demote triggers include `"mute"`, help fallback lists all three legacy attrs, and the `user_ref` usage line no longer claims a visible ID; `demote.md` intro/mermaid cover mute; `kicking.md`/`muting.md` constructor citations match the default-arg code; `kicking.md` execution list restored the missing re-demote step and the generic failure reply; `muting.md` documents the 100-year duration cap.
 
+</details>
+
 ## [6.4.0] - 2026-09-05
+
+<details>
+<summary>6.4.0 changes (click to expand)</summary>
 
 ### Changed
 
@@ -301,7 +314,12 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
   Followed each removal with a `ruff check` pass: `users_roles.RoleDoc` import, `scheduler.Any` and `scheduler.cast` imports, and `extraction.dataclass`/`field` imports all became unused as a direct consequence and were removed in the same commit. No behaviour change.
 
+</details>
+
 ## [6.3.0] - 2026-09-02
+
+<details>
+<summary>6.3.0 changes (click to expand)</summary>
 
 ### Changed
 
@@ -346,7 +364,12 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 - **Documentation** (`docs/README.md`, `docs/getting-started/setup.md`): added `--frozen` flag to `uv sync` commands to match project policy.
 - **Documentation** (`docs/architecture/database.md`, `docs/features/moderation/banning.md`, `docs/operations/performance.md`): updated all `bans` index references from the removed prefix index `(banned_user_id, is_active)` to the current compound index set in `mongos.ensure_indexes()`: `(banned_user_id, is_active, timestamp desc, ban_id desc)` for `get_active_ban()`, `(is_active, timestamp desc, ban_id desc)` for `active_bans()`, and `(banned_user_id, timestamp desc, ban_id desc)` for `/check` ban history.
 
+</details>
+
 ## [6.2.0] - 2026-08-17
+
+<details>
+<summary>6.2.0 changes (click to expand)</summary>
 
 ### Fixed
 
@@ -368,3 +391,5 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 - **Dead code** (`tcbot/database/documents.py`): removed unused `BanStatus` Literal alias. `RoleName` retained (used by `RoleDoc`).
 - **Validation** (`.github/workflows/*`): all CI workflows now use `python-version: "3.14"` (previously `"3.12"`).
 - **Tooling** (`pyproject.toml`, `pyrightconfig.json`, `.agents/skills/python-code-quality/`): added pyright to the validation pipeline alongside ruff. Updated Python target to 3.14 across project config, docs, and CI workflows.
+
+</details>
