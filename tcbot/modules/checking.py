@@ -14,7 +14,7 @@ from telegram.ext import CallbackQueryHandler, ContextTypes, MessageHandler
 
 from tcbot import cfg
 from tcbot import database as db
-from tcbot.modules.helper import decorators, extraction, identity, keyboards, replies
+from tcbot.modules.helper import decorators, extraction, keyboards, replies
 from tcbot.modules.helper.ban_info import build_ban_detail
 from tcbot.modules.helper.formatter import bold, code, esc, mention
 from tcbot.modules.helper.parse_editmsg import safe_edit_cb
@@ -147,8 +147,8 @@ async def _ban_summary(
 async def cmd_checkme(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Show the caller's federation status (ban / staff role / clean record).
 
-    Fetches the owner ID, caller role, and active ban in parallel. Returns
-    identity-aware replies for the Founder, staff members, and regular users.
+    Fetches the caller role and active ban in parallel. Returns
+    role-aware replies for staff members and regular users.
     Provides an appeal deep-link when the caller is actively banned.
     """
     user = update.effective_user
@@ -157,35 +157,25 @@ async def cmd_checkme(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     fname = user.first_name or str(user.id)
 
-    # * Fetch owner ID, user role, and active ban all in parallel
-    owner_id, user_role, ban = await asyncio.gather(
-        db.users_roles.get_owner_id(),
+    # * Fetch user role and active ban in parallel. No identity.classify()
+    # * call: executor == target always yields kind="self", so its
+    # * founder/admin branches could never fire; user_role below covers
+    # * staff. No owner-ID fetch either: nothing below uses it.
+    user_role, ban = await asyncio.gather(
         db.users_roles.get_effective_role(user.id),
         db.bans_db.get_active_ban(user.id),
         return_exceptions=True,
     )
-    if isinstance(owner_id, BaseException):
-        owner_id = None
     if isinstance(user_role, BaseException):
         user_role = None
     if isinstance(ban, BaseException):
         ban = None
 
-    ident = await identity.classify(
-        ctx.bot, user.id, user.id, fname, target_is_bot=user.is_bot
-    )
-
     # * If the caller has an active ban, ALWAYS show the ban summary with
     # * the appeal button -- even for staff. A banned staff member still
     # * needs the appeal link, and the staff-flavoured early-returns below
     # * would otherwise tell them "you're fine" while they are banned.
-    # * (The /check command path is the same user; it correctly shows the
-    # * ban. The /checkme "you are Founder/admin/Developer/Tester, you're
-    # * good" early-return would lie to a banned staff member about their
-    # * own status.) Founders are still allowed to see their own
-    # * status as "Founder, you're fine" when not banned; the ban check
-    # * below short-circuits them to the appeal summary only when banned.
-    if ban is not None and ident.kind not in ("founder", "admin"):
+    if ban is not None:
         text, proof_link = await _ban_summary(
             cast("dict[str, Any]", ban), user.id, fname, "Admin"
         )
@@ -199,43 +189,6 @@ async def cmd_checkme(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             )
         except Exception as exc:
             log.debug("checkme banned-staff reply failed: %s", exc)
-        return
-
-    if ident.kind == "founder":
-        try:
-            await msg.reply_text(
-                f"Bro, {mention(user.id, fname, user.username or '')}... seriously?\n\n"
-                "You're the Founder - you built this whole place. "
-                "The ban list doesn't apply to you, you run it. "
-                "Go touch grass, you're fine.",
-                parse_mode="HTML",
-            )
-        except Exception as exc:
-            log.debug("checkme founder reply failed for user %d: %s", user.id, exc)
-        return
-
-    if ident.kind == "admin":
-        try:
-            await msg.reply_text(
-                f"Hey {mention(user.id, fname, user.username or '')}, checking yourself?\n\n"
-                "You're on the staff team - you handle bans, not receive them. "
-                "No active ban on your end. You're good.",
-                parse_mode="HTML",
-            )
-        except Exception as exc:
-            log.debug("checkme admin reply failed for user %d: %s", user.id, exc)
-        return
-    if ident.kind in ("developer", "tester"):
-        role_label = ident.role_label or ""
-        try:
-            await msg.reply_text(
-                f"Hey {mention(user.id, fname, user.username or '')}, all good.\n\n"
-                f"You're a {esc(cfg.community_name)} {esc(role_label)} - on the team, not on the ban list. "
-                "Nothing to worry about.",
-                parse_mode="HTML",
-            )
-        except Exception as exc:
-            log.debug("checkme subrole reply failed for user %d: %s", user.id, exc)
         return
 
     if user_role == "admin":
