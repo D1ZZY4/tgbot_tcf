@@ -15,7 +15,8 @@ from telegram.ext import ContextTypes, MessageHandler
 from tcbot import database as db
 from tcbot.modules.helper import decorators, extraction, identity, replies
 from tcbot.modules.helper.decorators import resolve_and_check
-from tcbot.modules.helper.formatter import bold, code
+from tcbot.modules.helper.formatter import bold, code, mention
+from tcbot.modules.helper.workflows.demote_flow import Demote
 from tcbot.modules.helper.workflows.unban_flow import execute_unban
 from tcbot.utils.prefixes import build_prefixed_filters, parse_cmd_args
 
@@ -52,7 +53,8 @@ __help_sections__: list[tuple[str, str]] = [
         "is posted to the federation logs channel.\n\n"
         "If the user has no active federation ban, the bot will let you know and take no "
         "action.\n"
-        "A pending appeal review card is left untouched; resolving appeals stays on the appeal flow.",
+        "A pending appeal review card is left untouched; resolving appeals stays on the appeal flow.\n"
+        "A staff member re-promoted while banned is demoted first so the stale ban can be cleared.",
     ),
     replies.target_section(),
     (
@@ -129,12 +131,67 @@ async def cmd_unban(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
 
     refusal = identity.refuse_message("unban", ident)
-    if refusal is not None:
+    if refusal is not None and ident.kind not in ("admin", "developer", "tester"):
         try:
             await msg.reply_text(refusal, parse_mode="HTML")
         except Exception as exc:
             log.debug("unban refusal reply failed: %s", exc)
         return
+
+    if refusal is not None:
+        # * Staff targets are never federation-bannable, so "nothing to undo"
+        # * is normally the right reply. Exception: the target was re-promoted
+        # * while banned (race or manual grant) — then the active ban blocks
+        # * cleanup and greeting-time demote never runs (a banned-everywhere
+        # * user cannot rejoin to trigger it). Demote first, then fall through
+        # * to execute_unban. The speculative pre-fetch above may have failed,
+        # * so re-read; a failed re-read keeps the refusal rather than
+        # * demoting a staff member with no proven ban.
+        target_role = role_result[1]
+        ban_record = pre_ban
+        if ban_record is None:
+            try:
+                ban_record = await db.bans_db.get_active_ban(target_id)
+            except Exception:
+                log.exception(
+                    "unban staff re-read failed for target=%d; keeping refusal",
+                    target_id,
+                )
+                ban_record = None
+        if ban_record is None:
+            try:
+                await msg.reply_text(refusal, parse_mode="HTML")
+            except Exception as exc:
+                log.debug("unban refusal reply failed: %s", exc)
+            return
+        if target_role:
+            try:
+                await Demote.execute(
+                    ctx.bot,
+                    target_id,
+                    target_fname or str(target_id),
+                    target_role,
+                    admin.id,
+                    admin.first_name,
+                    trigger=None,
+                )
+            except Exception:
+                log.exception(
+                    "Demote before unban-cleanup failed for target=%d role=%s",
+                    target_id,
+                    target_role,
+                )
+                try:
+                    await msg.reply_text(
+                        f"{mention(target_id, target_fname or str(target_id))} "
+                        f"holds a federation role ({target_role}) and the demote "
+                        "step failed, so the unban cannot proceed safely. Demote "
+                        "them manually with /tcdemote and retry the unban.",
+                        parse_mode="HTML",
+                    )
+                except Exception as exc:
+                    log.debug("unban demote-fail reply failed: %s", exc)
+                return
 
     try:
         await execute_unban(

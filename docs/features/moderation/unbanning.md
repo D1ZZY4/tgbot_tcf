@@ -160,3 +160,4 @@ Key behaviors to keep in mind:
 14. `/tcunban` does not edit any pending appeal review card.
 15. Federation log send failure does not roll back the ban deactivation.
 16. The same `execute_unban` is reused by the appeal flow with `pre_ban=None` so it falls back to its own `get_active_ban` call.
+17. A staff target (Admin/Developer/Tester) with an active ban — re-promoted while banned — is demoted first (`Demote.execute(trigger=None)`) so the stale ban can be cleared; without an active ban the staff refusal stands, and a failed ban re-read keeps the refusal.
