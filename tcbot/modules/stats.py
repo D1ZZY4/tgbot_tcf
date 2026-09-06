@@ -1,6 +1,6 @@
 # © Copyright 2024 - 2026 Transsion Core
 # © Copyright 2024 - 2026 Dizzy
-# © Copyright 2026 Ave Studio
+# © Copyright 2026 Ave Labs
 
 """``/tcstats`` command and callback handlers: federation-wide overview and drill-downs."""
 
@@ -325,6 +325,14 @@ async def on_bans_search_input(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -
             )
         except Exception as exc:
             log.debug("Stats search result edit failed: %s", exc)
+    else:
+        # * No result card to edit (message-less search panel): the query was
+        # * already deleted above, so reply with the results instead of
+        # * dropping them silently. The stored RESULTS_KEY keeps paging working.
+        try:
+            await msg.reply_text(text, parse_mode="HTML", reply_markup=kb)
+        except Exception as exc:
+            log.debug("Stats search result fallback reply failed: %s", exc)
 
 
 @decorators.ratelimiter(limit=_RL_CB_LIMIT, period=_RL_PERIOD_S)
