@@ -16,7 +16,7 @@ flowchart TD
     Parallel --> Warns[warns_db]
     Parallel --> Kicks[kicks history]
     Parallel --> Mutes[mutes history]
-    Parallel --> Appeals[appeals_db]
+    Parallel --> Appeals[bans_db appeal records]
     Bans & Warns & Kicks & Mutes & Appeals --> Compose[Compose profile view]
     Compose --> Render[Send with drill-down keyboard]
     Render --> Callback{User clicks drill-down}

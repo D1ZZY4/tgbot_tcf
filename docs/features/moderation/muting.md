@@ -130,7 +130,7 @@ The reason prompt and proof prompt are stamped with `extra_info` (`<code id>: <d
 
 ## Reason and proof behavior
 
-The mute conversation uses `BuildReason("mute", skip_allowed=True)` and `BuildProof("mute", skip_allowed=True)`. Both keyboards expose `Skip` (when allowed) and `Cancel`:
+The mute conversation uses `BuildReason("mute")` and `BuildProof("mute")` (both default to `skip_allowed=True`). Both keyboards expose `Skip` (when allowed) and `Cancel`:
 
 - Reason: text, `Skip`, `Cancel`.
 - Proof: photo, video, `Skip`, `Cancel`.

@@ -69,7 +69,7 @@ in [`utilities.md#formatterpy`](utilities.md).
 | `mention(user_id, name, username=None)` | ID-based mention, always a clickable `FullName` resolving via `tg://user?id=...`. Backward-compatible alias for `user_ref()`. |
 | `user_ref(user_id, name, username=None)` | Action-summary reference. Always renders a clickable `FullName` resolving via `tg://user?id=ID`; usernames are never used. Falls back to the numeric ID as link text when the name is the numeric fallback. |
 
-Use `esc()`, `code()`, `mention()`, or `user_ref()` for any user-provided value in HTML messages. Use `user_ref()` in action summaries and audit logs where both name and ID are displayed.
+Use `esc()`, `code()`, `mention()`, or `user_ref()` for any user-provided value in HTML messages. Use `user_ref()` in action summaries and audit logs where the name links to the numeric user ID.
 
 ## `extraction.py`
 
@@ -116,7 +116,7 @@ The `Identity` dataclass now includes:
 - `kind`: The identity type
 - `target_id`: User ID
 - `fname`: First name
-- `username`: Optional username (used for global mentions)
+- `username`: Optional username display metadata (mention rendering always uses the numeric ID `tg://user` link; usernames are ignored by `user_ref`)
 - `is_bot`: Boolean flag
 
 The companion helpers `identity.refuse_message(action, ident)` and `identity.staff_notice(action, ident, community_name)` produce the witty refusal lines and staff heads-up notices used by every moderation entry handler.
@@ -131,7 +131,7 @@ The `decorators.py` module centralizes both auth-guard decorators and the shared
 |---|---|
 | `resolve_and_check(msg, executor_id, target_id, min_role=...)` | Resolves executor and target roles, checks minimum executor rank, checks executor outranks target, and replies on failure. Role lookup errors fail closed and do not become a no-role result. |
 
-Ban and kick entry points pair this with `Demote.execute(..., trigger="ban"/"kick")` from `workflows/demote_flow.py` to remove the target's role before the moderation action.
+Ban, kick, and mute entry points pair this with `Demote.execute(..., trigger="ban"/"kick"/"mute")` from `workflows/demote_flow.py` to remove the target's role before the moderation action.
 
 ## `replies.py`
 
@@ -146,7 +146,7 @@ class HelpEntry(TypedDict):
     sections: list[tuple[str, str]]  # (section_header, section_body) pairs
 ```
 
-Each help-bearing module declares exactly one `__help__: replies.HelpEntry = {...}` instead of three separate attributes. `help.py` reads this dict via `_builder_help()` and falls back to the legacy `__help_text__` / `__help_sections__` attributes for backward compatibility during migration.
+Each help-bearing module declares exactly one `__help__: replies.HelpEntry = {...}` instead of three separate attributes. `help.py` reads this dict via `_builder_help()` and falls back to the legacy `__module_name__` / `__help_text__` / `__help_sections__` attributes for backward compatibility during migration.
 
 ### Section constructor helpers
 

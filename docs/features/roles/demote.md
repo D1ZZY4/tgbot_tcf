@@ -1,17 +1,17 @@
 # Demote
 
-This document describes the current demotion behavior implemented by `tcbot/modules/admins.py` (command + callback handlers) and `tcbot/modules/helper/workflows/demote_flow.py` (the `Demote` class shared by manual demotion and auto-demote on ban/kick).
+This document describes the current demotion behavior implemented by `tcbot/modules/admins.py` (command + callback handlers) and `tcbot/modules/helper/workflows/demote_flow.py` (the `Demote` class shared by manual demotion and auto-demote on ban/kick/mute).
 
 For role hierarchy and rules, see [`roles.md`](roles.md). For the promote flow,
-see [`promote.md`](promote.md). For the ban flow that triggers auto-demotion,
-see [`../moderation/banning.md`](../moderation/banning.md). For shared helpers,
+see [`promote.md`](promote.md). For a flow that triggers auto-demotion
+(the ban example), see [`../moderation/banning.md`](../moderation/banning.md). For shared helpers,
 see [`../../architecture/helpers.md`](../../architecture/helpers.md).
 
 ```mermaid
 flowchart TD
     Trigger{Trigger source}
     Trigger -->|manual /tcdemote| Manual[Manual demote]
-    Trigger -->|ban or kick| Auto[Auto-demote]
+    Trigger -->|ban, kick or mute| Auto[Auto-demote]
     Manual --> Permission{Permission check}
     Auto --> SkipPerm[Skip permission check]
     Permission -->|denied| End1[Reject]

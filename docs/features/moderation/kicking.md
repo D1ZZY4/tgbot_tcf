@@ -87,7 +87,7 @@ When no inline reason remains after parsing, the bot enters `WAITING_REASON` and
 
 ## Reason and proof behavior
 
-The kick conversation uses `BuildReason("kick", skip_allowed=True)` and `BuildProof("kick", skip_allowed=True)`. Both keyboards expose `Skip` (when allowed) and `Cancel`:
+The kick conversation uses `BuildReason("kick")` and `BuildProof("kick")` (both default to `skip_allowed=True`). Both keyboards expose `Skip` (when allowed) and `Cancel`:
 
 - Reason: text, `Skip`, `Cancel`.
 - Proof: photo, video, `Skip`, `Cancel`.

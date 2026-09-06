@@ -56,7 +56,7 @@ Commands use the project's configured prefixes; slash commands are examples.
 
 ```python
 def _render(groups, *, detailed):
-    lines = [f"**Connected Groups**\n\nCount: {len(groups)}\n"]
+    lines = [f"{bold('Connected Groups')}\n\nCount: {len(groups)}\n"]
     for g in groups:
         title = g.get("title", "Unknown")
         if detailed:
