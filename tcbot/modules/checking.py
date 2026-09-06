@@ -1,6 +1,6 @@
 # © Copyright 2024 - 2026 Transsion Core
 # © Copyright 2024 - 2026 Dizzy
-# © Copyright 2026 Ave Studio
+# © Copyright 2026 Ave Labs
 
 """checkme and check handlers: self ban status and comprehensive user-profile view."""
 
@@ -177,7 +177,7 @@ async def cmd_checkme(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     # * would otherwise tell them "you're fine" while they are banned.
     if ban is not None:
         text, proof_link = await _ban_summary(
-            cast("dict[str, Any]", ban), user.id, fname, "Admin"
+            cast("dict[str, Any]", ban), user.id, fname, None
         )
         try:
             await msg.reply_text(
@@ -215,35 +215,15 @@ async def cmd_checkme(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             log.debug("checkme subrole reply failed for user %d: %s", user.id, exc)
         return
 
-    if not ban:
-        try:
-            await msg.reply_text(
-                f"You're clean - no active ban in {cfg.community_name}."
-            )
-        except Exception as exc:
-            log.debug("checkme clean reply failed for user %d: %s", user.id, exc)
-        return
-
-    ban_id = ban.get("ban_id", "")
-    if not ban_id:
-        try:
-            await msg.reply_text(_ERR_BAN_NOT_FOUND)
-        except Exception as exc:
-            log.debug("checkme missing ban_id reply failed: %s", exc)
-        return
-
-    text, proof_link = await _ban_summary(cast("dict[str, Any]", ban), user.id, fname)
-
+    # * ban is None on this path: the active-ban branch above always returns,
+    # * so the second ban-detail block that used to follow was unreachable
+    # * dead code (removed). The clean reply below is live for non-staff,
+    # * non-banned callers.
     try:
-        await msg.reply_text(
-            text,
-            parse_mode="HTML",
-            reply_markup=keyboards.checkme_ban_kb(
-                ctx.bot.username or "", ban_id, proof_link
-            ),
-        )
+        await msg.reply_text(f"You're clean - no active ban in {cfg.community_name}.")
     except Exception as exc:
-        log.debug("checkme ban-detail reply failed for user %d: %s", user.id, exc)
+        log.debug("checkme clean reply failed for user %d: %s", user.id, exc)
+        return
 
 
 # ──────────────────────── Callback Handlers ─────────────────────── #
