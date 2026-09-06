@@ -337,12 +337,15 @@ class BuildAppeal:
             ):
                 ctx.user_data.pop(key, None)
 
-        _, edit_r = await asyncio.gather(
-            q.answer(),
-            q.edit_message_text(_MSG_CANCELLED),
-            return_exceptions=True,
-        )
-        if isinstance(edit_r, BaseException):
+        # * Answer before the visible edit so the client spinner clears
+        # * first; mirrors ban_flow.on_cancel_proof sequential ordering.
+        try:
+            await q.answer()
+        except Exception as exc:
+            log.debug("appeal cancel answer failed: %s", exc)
+        try:
+            await q.edit_message_text(_MSG_CANCELLED)
+        except Exception:
             log.debug("appeal cancel edit failed (message may already be gone)")
         return ConversationHandler.END
 
