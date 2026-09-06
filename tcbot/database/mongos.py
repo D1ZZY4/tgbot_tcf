@@ -150,6 +150,43 @@ async def connect() -> None:
 # * Safe to call multiple times - MongoDB ignores existing indexes
 
 
+# * Auto-name shared by the retired plain until_date index and the current
+# * TTL one (MongoDB names both "until_date_1").
+_LEGACY_UNTIL_DATE_INDEX: str = "until_date_1"
+
+
+async def _drop_legacy_active_mutes_index() -> None:
+    """Drop a pre-TTL ``until_date_1`` index left by older releases.
+
+    Releases before the TTL migration created a plain ``(until_date)``
+    index under the same auto-name the TTL variant needs, so creating it
+    fails with ``IndexOptionsConflict`` (code 85) and the fail-fast
+    startup aborts before serving traffic. Databases already on the TTL
+    variant (or fresh ones) skip this: the drop runs only when the
+    existing index lacks ``expireAfterSeconds``. Startup has not served
+    traffic yet, so the brief window without the single-field index is
+    safe: the ``(user_id, until_date)`` compound still serves per-user
+    reads, and the TTL recreate lands immediately after.
+    """
+    try:
+        existing = await db_call(col("active_mutes").list_indexes().to_list(None))
+    except Exception as exc:
+        log.debug("active_mutes index reconciliation skipped: %s", exc)
+        return
+    for spec in existing:
+        if spec.get("name") != _LEGACY_UNTIL_DATE_INDEX:
+            continue
+        if "expireAfterSeconds" in spec:
+            return
+        try:
+            await db_call(col("active_mutes").drop_index(_LEGACY_UNTIL_DATE_INDEX))
+        except Exception as exc:
+            log.warning("Dropping legacy active_mutes index failed: %s", exc)
+            return
+        log.info("Dropped legacy non-TTL active_mutes.until_date_1 index.")
+        return
+
+
 async def ensure_indexes() -> None:
     """Create all critical collection indexes in parallel. No-op if they already exist.
 
@@ -160,6 +197,10 @@ async def ensure_indexes() -> None:
     duplicate moderation records, which is worse than a loud startup crash
     that the runner watchdog restarts from.
     """
+    # * Sequential pre-step, not part of the gather below: a legacy plain
+    # * until_date_1 index must be gone before the TTL recreate runs, or
+    # * the recreate conflicts and this same fail-fast fires.
+    await _drop_legacy_active_mutes_index()
     results = await asyncio.gather(
         # * Serves get_active_ban(): filter on banned_user_id + is_active, sort on
         # * timestamp + ban_id. Compound index replaces the separate prefix index below.
@@ -230,11 +271,14 @@ async def ensure_indexes() -> None:
         col("federated_groups").create_index([("is_active", 1)]),
         # * active_mutes: one document per muted user (upserted by set_active_mute)
         col("active_mutes").create_index([("user_id", 1)], unique=True),
-        # * Serves active_mute_docs() bulk-fetch and get_active_mute() filtered by expiry
-        col("active_mutes").create_index([("until_date", 1)]),
         # * Compound for get_active_mute() $or filter on specific user
         col("active_mutes").create_index([("user_id", 1), ("until_date", 1)]),
-        # * TTL: MongoDB auto-deletes expired timed mutes (until_date <= now).
+        # * TTL doubles as the expiry-filtered fetch index for
+        # * active_mute_docs()/get_active_mute(): same key as the retired
+        # * plain index, so no separate single-field index is kept.
+        # * MongoDB auto-names both "until_date_1" and refuses the duplicate
+        # * with IndexOptionsConflict, hence the pre-step drop above.
+        # * MongoDB auto-deletes expired timed mutes (until_date <= now).
         # * Permanent mutes (until_date None/missing) are never TTL-expired,
         # * matching the query-time filter in get_active_mute/active_mute_docs,
         # * so this only prunes rows those queries already ignore.

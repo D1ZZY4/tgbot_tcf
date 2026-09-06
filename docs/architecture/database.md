@@ -102,7 +102,7 @@ write.
 | `warn_counts` | unique `(user_id, chat_id)`, `(updated_at)` (counter expiry sweep), `(user_id, count, updated_at desc)` (`user_warn_groups` / `federation_warn_count`) |
 | `kicks` | `(user_id, timestamp desc)`, `(chat_id)` |
 | `mutes` | `(user_id, timestamp desc)`, `(chat_id)` |
-| `active_mutes` | unique `(user_id)`, `(until_date)` (expiry-filtered fetch), `(user_id, until_date)`, TTL on `(until_date)` pruning expired timed mutes (permanent `None` rows never expire) |
+| `active_mutes` | unique `(user_id)`, `(user_id, until_date)`, TTL on `(until_date)` serving the expiry-filtered fetch and pruning expired timed mutes (permanent `None` rows never expire; the retired plain single-field index shared its auto-name and is dropped on startup when found without `expireAfterSeconds`) |
 | `promotion_requests` | unique `(request_id)`, `(target_id, status)`, unique `(target_id)` partial on `status == "pending"` (one pending request per user), `(status, requested_date)` (serves `all_pending` filter plus oldest-first sort) |
 
 If a new query depends on a new access pattern, add the matching index in `ensure_indexes()` together with the helper change.

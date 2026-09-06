@@ -176,6 +176,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 - **MongoDB TLS pins the certifi CA bundle** (`tcbot/database/mongos.py`, `pyproject.toml`, `uv.lock`): startup crashed with `CERTIFICATE_VERIFY_FAILED: unable to get local issuer certificate` on hosts whose system CA store is empty or outdated (verified: 2 entries in `/etc/ssl/certs`, no `cert.pem`). The Motor client now passes `tlsCAFile=certifi.where()` (new direct dependency), proven end-to-end with a live TLS handshake plus `hello ok: 1.0` against the Atlas shard using the bundle while the system store fails identically to the crash. An explicit `tlsCAFile` in `MONGODB_URI` always wins; non-TLS schemes ignore the option. Verification is never disabled.
 
+- **Duplicate active_mutes index crashed startup** (`tcbot/database/mongos.py`, `docs/architecture/database.md`): the retired plain `(until_date)` index and the TTL variant auto-name to the same `until_date_1`, so `ensure_indexes()` failed with `IndexOptionsConflict` (code 85) on any database holding one variant, and the fail-fast re-raise aborted startup before serving traffic (production fatal). The plain index is removed (the TTL index serves the same expiry-filtered reads) and a sequential pre-step drops a legacy non-TTL `until_date_1` left by pre-TTL releases, so TTL-present, plain-only, and fresh databases all start cleanly. Verified by spec review (three states traced) plus the standard suite; no live MongoDB available here to execute the startup path.
+
 </details>
 
 ## [6.5.0] - 2026-09-06
