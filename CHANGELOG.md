@@ -66,6 +66,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 - **Response-path doc sync** (`docs/features/moderation/connecting.md`, `docs/architecture/helpers.md`): `connecting.md` documents the pre-replay progress edit on both connect paths; `helpers.md` notes the numeric-ID cache fast path in `extract_target`.
 
+- **Audit doc sync, round 5** (`docs/operations/ci-cd.md`, `docs/features/moderation/muting.md`, `connecting.md`, `README.md`, `replit.md`, `docs/getting-started/setup.md`, `AGENTS.md`): fixed the dead `#cicd--automation` anchor (points at `#development`), the off-by-one `muting_flow.py` line ref, the missing `1w` mute example in README, the implied-required `WEBHOOK_URL` on Replit (auto-detected via `REPLIT_DEV_DOMAIN`), the missing `CRON_SECRET` setup row, and the missing `APPEAL_LOG_HANDLE`/`CRON_SECRET` AGENTS entries; `connecting.md` no longer references the removed `_is_primary_group` alias.
+
 ### Fixed
 
 - **Precise `BanDoc` typing for ban-detail rendering** (`tcbot/modules/helper/ban_info.py`, `checking.py`, `helper/workflows/check_flow.py`, `stats_flow.py`): `build_ban_detail` and `_ban_summary` took untyped `dict`, forcing five `cast("dict...")` workarounds at call sites while the real `pyright tcbot/` suite stayed red (5 errors: `ban['ban_id']` on total=False `BanDoc`, `BanDoc` vs `dict` param). Both functions now take `BanDoc` with total=False-safe `.get()` access, all casts are removed, search results are typed `list[BanDoc]`, and the full suite is green. Behavior is identical for complete records; sparse records now render with display fallbacks instead of raising `KeyError`.

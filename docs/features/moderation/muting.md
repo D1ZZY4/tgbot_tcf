@@ -71,7 +71,7 @@ The mute command is a `ConversationHandler` built by `reason_flow.build_modactio
 
 ## Duration token format
 
-The duration regex is `_DURATION_RE` in `muting_flow.py:39`:
+The duration regex is `_DURATION_RE` in `muting_flow.py:40`:
 
 ```python
 _DURATION_RE = re.compile(r"^(\d+)(ye|mo|[smhdw])$", re.IGNORECASE)

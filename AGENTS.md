@@ -228,12 +228,14 @@ Important non-secret/runtime variables include:
 - `PORT`: Flask keep-alive port, default `5000`; invalid or out-of-range values fall back to `5000`.
 - `MAIN_GROUP`, `MAIN_CHANNEL`, `EXTEND_GROUP`: community chat IDs.
 - `PROOFS`, `LOGS`, `LOGS_ERRORS`, `APPEALS`: log/proof/appeal destinations; values may be `chat_id` or `chat_id/thread_id`.
+- `APPEAL_LOG_HANDLE`: channel handle shown in appeal instructions.
 - `APPEAL_DISCUSSION_TOPIC`: thread ID in `MAIN_GROUP` for appeal review cards.
 - `PROOF_TIMEOUT_SECONDS`, `APPEAL_TIMEOUT_SECONDS`, `ALBUM_DEBOUNCE_SECONDS`: conversation timing settings.
 - `LOG_LEVEL`: bot log level.
 - `MODULES_LOAD`, `MODULES_NO_LOAD`: optional module allowlist/denylist.
 - `WEBHOOK_URL`: explicit webhook URL for production; overrides `REPLIT_DEV_DOMAIN`.
 - `WEBHOOK_SECRET`: optional webhook secret for Telegram to sign update payloads.
+- `CRON_SECRET`: bearer token for the serverless warn-expiry cron endpoint (required on Vercel).
 - `REDIS_URL`: optional Redis connection URL for L2 cache.
 - `WARN_LIMIT`: per-group warn threshold that triggers auto-ban; default `3`.
 - `WARN_EXPIRY_DAYS`: days after which warn records expire; default `0` (disabled).

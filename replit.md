@@ -58,7 +58,7 @@ to `5000`.
 
 Production Replit deployments should use webhook mode:
 
-1. Set `WEBHOOK_URL` to your Replit public domain (e.g., `https://your-project.username.repl.co`).
+1. Set `WEBHOOK_URL` to your Replit public domain (e.g., `https://your-project.username.repl.co`). When `WEBHOOK_URL` is unset, the bot auto-detects `REPLIT_DEV_DOMAIN`, so an explicit URL is optional on Replit.
 2. Set `WEBHOOK_SECRET` to a random string for request validation.
 3. The bot registers the webhook with Telegram on startup.
 
@@ -96,7 +96,7 @@ The `uv.lock` file ensures reproducible installs on Replit. Do not commit
 - [ ] `BOT_TOKEN` set in Replit Secrets.
 - [ ] `MONGODB_URI` set in Replit Secrets.
 - [ ] `OWNER_ID` set in Replit Secrets.
-- [ ] `WEBHOOK_URL` set for production webhook mode.
+- [ ] `WEBHOOK_URL` set for production webhook mode (optional on Replit: `REPLIT_DEV_DOMAIN` is auto-detected).
 - [ ] `WEBHOOK_SECRET` set for webhook validation.
 - [ ] Run command is `uv run python -m tcbot`.
 - [ ] `uv sync --frozen` has been run after dependency changes.

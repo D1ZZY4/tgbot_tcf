@@ -2,7 +2,7 @@
 
 This document describes all GitHub Actions workflows configured for the TCF Bot project.
 
-For the user-facing CI/CD overview, see [`../../README.md`](../../README.md#cicd--automation).
+For the user-facing CI/CD overview, see [`../../README.md`](../../README.md#development).
 For the changelog of CI/CD additions, see
 [`../../CHANGELOG.md`](../../CHANGELOG.md).
 

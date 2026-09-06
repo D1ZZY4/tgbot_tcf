@@ -35,7 +35,7 @@ Fill in at least `BOT_TOKEN`, `OWNER_ID`, and `MONGODB_URI` in `config.env` befo
 | `/tcban` (alias `/tcb`) | Federation-wide ban with required photo/video proof. |
 | `/tcunban` (alias `/tcunb`) | Lift an active federation ban across all groups. |
 | `/tckick` (alias `/tck`) | Remove a user from the current group only. |
-| `/tcmute` (alias `/tcm`), `/tcunmute` | Restrict or restore messaging across all groups, optionally timed (`30s`, `15m`, `2h`, `7d`, `3mo`, `2ye`). |
+| `/tcmute` (alias `/tcm`), `/tcunmute` | Restrict or restore messaging across all groups, optionally timed (`30s`, `15m`, `2h`, `7d`, `1w`, `3mo`, `2ye`). |
 | `/tcwarn` (alias `/tcw`), `/tcunwarn`, `/warns`, `/resetwarns` | Per-group warnings; hitting the limit triggers an automatic federation ban. |
 | `/check`, `/checkme` | Ban-history lookup for a target or for yourself, with appeal links. |
 | `/tcconnect`, `/tcdisconnect`, `/rmtc`, `/tcgroups` | Connect or remove groups and list the federation roster. |
