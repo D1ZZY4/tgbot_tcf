@@ -60,7 +60,7 @@ The Telegram circuit state (`closed`, `open`, or `half_open`) is exposed in the 
 | Export | Purpose |
 |---|---|
 | `fan_out(coros, max_concurrent=10)` | Run awaitables concurrently up to `max_concurrent` at once; never raises; returns exceptions as list elements. |
-| `count_errors(results)` | Count every `BaseException` item in a `fan_out` result list. Used for non-moderation fan-outs (broadcast, maintenance) where any refusal means "not reached". |
+| `count_errors(results)` | Count every `BaseException` item in a `fan_out` result list. Strict primitive for callers where any refusal means "not reached"; current broadcast, maintenance, and moderation fan-outs all count via `count_transient_errors` or structured results instead. |
 | `is_benign_telegram_error(exc)` | Return True for known-benign Telegram refusals (user not participant, chat gone, bot demoted). |
 | `count_transient_errors(results)` | Count only non-benign failures. Used by moderation fan-outs (ban, unban, mute, warn auto-ban) so benign refusals do not look like failed groups. |
 
@@ -80,7 +80,7 @@ Use it for multi-group actions such as ban, unban, mute, broadcast, and cleanup.
 results = await fan_out(
     [ctx.bot.ban_chat_member(group["chat_id"], target_id) for group in groups]
 )
-errors = count_errors(results)
+errors = count_transient_errors(results)
 ```
 
 ## `prefixes.py`

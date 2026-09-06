@@ -144,7 +144,7 @@ def _owner_only(exc: BaseException | None) -> bool:
 
 _DEDUPE_WINDOW = 30.0
 _RECENT_MAX: int = 1000
-_recent: dict[tuple, float] = {}
+_recent: dict[tuple[object, ...], float] = {}
 
 # ── Owner-DM repeat suppression ── #
 # * Owner-only errors (a duplicate instance's Conflict storm, a revoked
@@ -154,15 +154,20 @@ _recent: dict[tuple, float] = {}
 _OWNER_WINDOW: float = 3600.0
 _OWNER_BUDGET: int = 3
 _OWNER_MAX: int = 1000
-_owner_sent: dict[tuple, tuple[float, int]] = {}
+_owner_sent: dict[tuple[object, ...], tuple[float, int]] = {}
 
 
-def _owner_suppressed(fp: tuple) -> bool:
+def _owner_suppressed(fp: tuple[object, ...]) -> bool:
     """Return True when this owner fingerprint exhausted its hourly budget."""
     now = monotonic()
     if len(_owner_sent) >= _OWNER_MAX:
-        for k in [k for k, (s, _) in _owner_sent.items() if now - s >= _OWNER_WINDOW]:
-            del _owner_sent[k]
+        expired = [
+            key
+            for key, (sent_at, _) in _owner_sent.items()
+            if now - sent_at >= _OWNER_WINDOW
+        ]
+        for key in expired:
+            del _owner_sent[key]
     start, count = _owner_sent.get(fp, (now, 0))
     if now - start >= _OWNER_WINDOW:
         start, count = now, 0
@@ -177,7 +182,7 @@ def _owner_suppressed(fp: tuple) -> bool:
 _MAX_CONTEXT_LEN: int = 120
 
 
-def _fingerprint_exc(exc: BaseException) -> tuple:
+def _fingerprint_exc(exc: BaseException) -> tuple[object, ...]:
     """Build a coarse identity for an exception that survives class+location+message."""
     tb = exc.__traceback__
     last = None
@@ -198,7 +203,7 @@ def _fingerprint_exc(exc: BaseException) -> tuple:
     )
 
 
-def _fingerprint_record(record: logging.LogRecord) -> tuple:
+def _fingerprint_record(record: logging.LogRecord) -> tuple[object, ...]:
     """Build a coarse identity for a log record."""
     return (
         "log",
@@ -208,17 +213,19 @@ def _fingerprint_record(record: logging.LogRecord) -> tuple:
     )
 
 
-def _seen_recently(fp: tuple) -> bool:
+def _seen_recently(fp: tuple[object, ...]) -> bool:
     """Mark fp as seen now; return True if it was already seen within the window."""
     now = monotonic()
-    for k in list(_recent):
-        if now - _recent[k] > _DEDUPE_WINDOW:
-            del _recent[k]
+    expired = [
+        key for key, seen_at in _recent.items() if now - seen_at > _DEDUPE_WINDOW
+    ]
+    for key in expired:
+        del _recent[key]
     if len(_recent) >= _RECENT_MAX:
         # * Evict the oldest 10% when the cap is hit to avoid unbounded memory growth
         # * during storm scenarios with many distinct error fingerprints.
-        for k, _ in sorted(_recent.items(), key=lambda x: x[1])[: _RECENT_MAX // 10]:
-            del _recent[k]
+        for key, _ in sorted(_recent.items(), key=lambda x: x[1])[: _RECENT_MAX // 10]:
+            del _recent[key]
     if fp in _recent:
         return True
     _recent[fp] = now

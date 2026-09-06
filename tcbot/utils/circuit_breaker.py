@@ -37,7 +37,7 @@ from __future__ import annotations
 
 import logging
 from enum import Enum
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 from tcbot.utils.time_and_date import monotonic
 
@@ -45,8 +45,6 @@ if TYPE_CHECKING:
     from collections.abc import Awaitable
 
 log = logging.getLogger(__name__)
-
-_T = TypeVar("_T")
 
 _DEFAULT_FAILURE_THRESHOLD: int = 5
 _DEFAULT_RECOVERY_TIMEOUT: float = 60.0
@@ -126,7 +124,7 @@ class CircuitBreaker:
         """True when the circuit is OPEN and calls should be rejected."""
         return self.state is CircuitState.OPEN
 
-    async def call(self, coro: Awaitable[_T]) -> _T:
+    async def call[T](self, coro: Awaitable[T]) -> T:
         """Execute *coro* through the circuit breaker.
 
         Raises:
@@ -143,7 +141,7 @@ class CircuitBreaker:
             raise CircuitOpenError(f"Circuit [{self._name}] is OPEN; call rejected.")
 
         try:
-            result: _T = await coro
+            result: T = await coro
         except Exception as exc:
             self._record_failure()
             raise exc from None

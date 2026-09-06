@@ -51,12 +51,6 @@ log = logging.getLogger(__name__)
 # * live in tcbot.utils.transport (single owner); only the link-preview
 # * default stays local because __main__ keeps that constant private.
 
-_HTTP_READ_TIMEOUT: float = 60
-_HTTP_WRITE_TIMEOUT: float = 30
-_HTTP_CONNECT_TIMEOUT: float = 30
-_HTTP_POOL_TIMEOUT: float = 15
-_API_POOL_SIZE: int = 8
-
 # * Applied globally via Defaults so every bot message suppresses link preview cards.
 _LINK_PREVIEW_DISABLED: LinkPreviewOptions = LinkPreviewOptions(is_disabled=True)
 

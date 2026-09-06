@@ -21,6 +21,7 @@ from tcbot import cfg
 from tcbot.database import mongos, redis_client
 from tcbot.database import scheduler as sched_mod
 from tcbot.utils import circuit_breaker as _cb
+from tcbot.utils.circuit_breaker import CircuitState
 from tcbot.utils.time_and_date import utc_now
 
 if TYPE_CHECKING:
@@ -55,8 +56,8 @@ def health() -> tuple[str, int, dict[str, str]]:
     # * so AND it with the live circuit state: after 5 consecutive DB failures
     # * the mongodb breaker opens and the field must read error, matching the
     # * overall verdict below.
-    db_circuit_open = _cb.mongodb.state.value == "open"
-    if db_circuit_open:
+    db_state = _cb.mongodb.state
+    if db_state is CircuitState.OPEN:
         mongodb_ok = False
 
     rc = redis_client.client()
@@ -67,16 +68,15 @@ def health() -> tuple[str, int, dict[str, str]]:
     else:
         redis_status = "disabled"
 
-    tg_circuit = _cb.telegram.state.value
-    db_circuit = _cb.mongodb.state.value
+    tg_state = _cb.telegram.state
 
     overall = (
         "ok"
         if (
             mongodb_ok
             and scheduler_ok
-            and tg_circuit != "open"
-            and db_circuit != "open"
+            and tg_state is not CircuitState.OPEN
+            and db_state is not CircuitState.OPEN
         )
         else "degraded"
     )
@@ -85,8 +85,8 @@ def health() -> tuple[str, int, dict[str, str]]:
         "mongodb": "ok" if mongodb_ok else "error",
         "redis": redis_status,
         "scheduler": "ok" if scheduler_ok else "error",
-        "circuit_telegram": tg_circuit,
-        "circuit_mongodb": db_circuit,
+        "circuit_telegram": tg_state.value,
+        "circuit_mongodb": db_state.value,
         "ts": utc_now().isoformat(timespec="seconds"),
     }
     code = 200 if overall == "ok" else 503

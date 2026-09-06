@@ -79,8 +79,7 @@ Target resolution for moderation commands.
 |---|---|
 | `extract_target(update, args, bot=None)` | Resolves targets; returns `tuple[int, str]` (user_id, fname) on success or `tuple[None, None]` on failure. Priority: reply to sender_chat-aware (channel senders are refused: they are not actionable user IDs, so resolution falls through to args/entities) → args (ID/username) → args (partial name search in DB) → text mentions → @mentions. Numeric IDs take a cache fast path (IDs are immutable, so a real cached name skips the live `get_chat` round trip); bare-numeric and legacy `User <id>` fallbacks fall through to the live lookup. |
 | `has_reply_target(msg)` | Reply-target predicate mirroring `extract_target` priority 1 (including the anonymous-admin skip). Command entries use it to decide whether the first arg token names the target or starts the reason text. |
-| `resolve_user_identity(bot, target_id)` | Gap-fill resolver returning `(fname, uname, lname)`; cache fast path, else one bounded live fetch, persists what it finds. |
-| `sync_user_identity(bot, target_id)` | Full sync protocol for detail views: cached read, live verify, update on mismatch. |
+| `sync_user_identity(bot, target_id)` | Full sync protocol for detail views: cached read, live verify, update on mismatch. The older gap-fill-only `resolve_user_identity` was removed once every consumer used `sync`; its logic lives on inside `sync_user_identity` and `_fetch_live_identity`. |
 
 **Resolution priority for `extract_target()`:**
 1. **Reply** - Most common use case, checked first

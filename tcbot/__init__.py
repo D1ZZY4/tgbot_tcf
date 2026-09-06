@@ -142,6 +142,7 @@ def _int_from_env(key: str, default: int, *, minimum: int | None = None) -> int:
 
 
 def _env_list(key: str) -> list[str]:
+    """Read a comma-separated env var into a stripped name list; empty when unset."""
     raw = os.getenv(key, "").strip()
     if not raw:
         return []

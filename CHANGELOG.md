@@ -9,6 +9,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Changed
 
+- **Professional modernization sweep, zero-delay style** (`tcbot/serverless.py`, `tcbot/alive.py`, `tcbot/database/mongos.py`, `tcbot/utils/circuit_breaker.py`, `tcbot/utils/error_reporter.py`): removed five dead `_HTTP_*`/`_API_POOL_SIZE` shadow constants in `serverless.py` that contradicted the single-owner `tcbot/utils/transport.py` comment (the builder already imports the shared values); health checks compare `CircuitState.OPEN` enum members instead of `"open"` string literals (same verdicts, no stringly-typed typo surface); `db_call` and `CircuitBreaker.call` use PEP 695 `def f[T](...)` generics matching the existing `cache.py`/`serverless.run`/`pagination.paginate` precedent instead of legacy `TypeVar`; error-reporter dedupe maps use `tuple[object, ...]` fingerprints, expiry sweeps run single-pass over `.items()` without loop-variable shadowing. No success-path behavior change.
+
 - **Handler entry hardening sweep** (`tcbot/__init__.py`, `tcbot/modules/connecting.py`, `disconnecting.py`, `broadcasting.py`, `greeting.py`, `admins.py`, `banning.py`, `kicking.py`, `muting.py`, `stats.py`): entry `assert x is not None` checks became guard returns (asserts vanish under `python -O`, turning a missing field into an unhandled crash instead of a clean return), and `parse_list` splits the forbidden tuple-except form into two clauses. No success-path behavior change.
 
 - **Health mongodb field follows the live circuit** (`tcbot/alive.py`): `is_connected()` is a sticky startup flag, so a partitioned MongoDB still read `ok` while only the overall verdict degraded via the breaker. The field now ANDs the live mongodb-breaker state.
@@ -41,6 +43,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 - **Bounded batch-join handling** (`tcbot/modules/greeting.py`): `on_new_member` processes invite-link batches through a semaphore (10 concurrent) instead of unbounded `gather`, bounding MongoDB pool pressure and Telegram bursts. Per-member failures stay isolated via `return_exceptions=True`.
 
 - **Shared group-list outage reply** (`tcbot/modules/helper/replies.py`, `broadcasting.py`, `maintenance.py`, `groups.py`): the identical "Could not load the group list..." retry text lived inline in three modules; now a single `replies.ERR_GROUPS_LOAD_FAILED` constant. No text change.
+
+- **Dead identity resolver removed, fan-out counting docs corrected** (`tcbot/modules/helper/extraction.py`, `docs/architecture/helpers.md`, `docs/architecture/database.md`, `docs/architecture/utilities.md`): `resolve_user_identity` had zero callers (every consumer uses `sync_user_identity`, whose logic covers it); removed with its doc rows updated. `docs/architecture/utilities.md` no longer claims broadcast/maintenance count via `count_errors` (both count via `count_transient_errors` or structured results) and the ban fan-out example uses `count_transient_errors`; the strict `count_errors` primitive itself is retained.
 
 - **Modern typing and warning hygiene** (`tcbot/serverless.py`, `tcbot/utils/pagination.py`, `tcbot/alive.py`, `tcbot/modules/netspeed.py`): `serverless.run` is generic over the coroutine result type and `paginate` is generic over the item type (both PEP 695, verified: pyright 0 errors); the webhook enqueue path closes an unscheduled coroutine instead of leaking a never-awaited warning; the duplicated speedtest parse-failure blocks share one responder. No behavior change.
 

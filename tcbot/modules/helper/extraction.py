@@ -28,7 +28,7 @@ log = logging.getLogger(__name__)
 # * the user-facing reply. Per-call budget is the shared project-wide value.
 _GET_CHAT_TIMEOUT = TELEGRAM_LOOKUP_TIMEOUT
 # * Overall deadline for the per-group get_chat_member sweep in
-# * resolve_user_identity: bounds latency on large federations.
+# * _fetch_live_identity: bounds latency on large federations.
 _RESOLVE_SWEEP_TIMEOUT = 15.0
 # * Upper bound for concurrent get_chat_member probes during the sweep.
 # * Matches the fan_out Telegram cap; keeps the burst bounded while cutting
@@ -324,52 +324,6 @@ async def _fetch_live_identity(
 
     if not fname:
         return None
-    return fname, uname, lname
-
-
-async def resolve_user_identity(
-    bot: Bot, target_id: int
-) -> tuple[str, str | None, str | None]:
-    """Return (display_name, username_or_None, last_name_or_None) for any user.
-
-    Shared identity resolver used by profile views (``/check``,
-    ``/tcstats`` user detail). Fast path is the member cache: a document
-    carrying both first name and username proves a full-identity write
-    happened (sparse writers such as ban-by-ID never supply a username),
-    so it is returned as-is without touching Telegram. Otherwise one live
-    fetch runs; anything resolved is persisted via ``upsert_user`` plus an
-    L1 triple put (upsert invalidates rather than populates), so the next
-    view hits the fast path. A fruitless attempt caches the sentinel so
-    repeats stay bounded by the L1 TTL. On timeout or total miss the
-    numeric-ID fallback still replies.
-    """
-    cached = await db.users_cache.get_user(target_id)
-    fname = (cached.get("first_name") or "") if cached else ""
-    uname = (cached.get("username") if cached else None) or None
-    lname = (cached.get("last_name") if cached else None) or None
-
-    if fname and uname:
-        return fname, uname, lname
-
-    if not cached and db.users_cache.has_recent_identity_attempt(target_id):
-        # * Unknown user: a cached entry means a recent attempt already
-        # * came up empty; skip Telegram until the L1 TTL expires.
-        return str(target_id), None, None
-
-    live = await _fetch_live_identity(bot, target_id)
-    if live is None:
-        db.users_cache.remember_identity(target_id, None, None, None)
-        return str(target_id), None, None
-
-    fname, uname, lname = live
-    # * Persist whatever Telegram told us (even a username-less profile)
-    # * so the next view takes the fast path, then mirror it into L1
-    # * because upsert_user invalidates rather than populates.
-    try:
-        await db.users_cache.upsert_user(target_id, uname, fname, lname)
-    except Exception as exc:
-        log.debug("users_cache upsert after resolve failed for %d: %s", target_id, exc)
-    db.users_cache.remember_identity(target_id, fname, uname, lname)
     return fname, uname, lname
 
 

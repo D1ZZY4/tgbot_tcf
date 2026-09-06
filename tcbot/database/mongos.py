@@ -11,7 +11,7 @@ import logging
 import secrets
 import string
 from pathlib import Path
-from typing import TYPE_CHECKING, TypeVar
+from typing import TYPE_CHECKING
 
 import certifi
 from motor.motor_asyncio import (
@@ -25,8 +25,6 @@ from tcbot.utils.circuit_breaker import mongodb as _mongo_cb
 
 if TYPE_CHECKING:
     from collections.abc import Awaitable
-
-_T = TypeVar("_T")
 
 _RESOLV_CONF = "/etc/resolv.conf"
 
@@ -327,7 +325,7 @@ def is_connected() -> bool:
 # * for a socket timeout.
 
 
-async def db_call(coro: Awaitable[_T]) -> _T:
+async def db_call[T](coro: Awaitable[T]) -> T:
     """Execute a Motor coroutine through the MongoDB circuit breaker.
 
     Use this inside database helper modules for operations where a full
