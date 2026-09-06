@@ -10,6 +10,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Fixed
 
+- **Auth-guard outage replies** (`tcbot/modules/helper/decorators.py`, `database/users_roles.py`): the four tier decorators (`owner_only`, `staff_only`, `mod_only`, `basic_mod_only`) let role-lookup exceptions escape with no user reply during a database outage, while entry handlers already fail closed with a retry message via `resolve_and_check`. Each decorator now catches lookup failures, logs them, and replies with the existing retry text, preserving fail-closed behavior. `CancelledError` still propagates everywhere, including a new re-raise in `is_staff` (previously coerced to `False`).
+
 - **Outage-path reply follow-up** (`tcbot/modules/groups.py`): `cmd_tcfgroups` awaited `active_groups()` unguarded like the broadcast/promote-list paths fixed earlier, crashing the handler on a database outage with no reply. Now catches the failure, logs it, and replies with a server-error message.
 
 - **Stale cache-lock comment** (`tcbot/database/cache.py`): the `TwoLevelCache._locks` comment claimed locks are cleared in `clear()`, but `clear()` only clears the L1 store (locks are dropped per-fetch in `get_or_fetch()`'s `finally` plus in `invalidate()`). Comment corrected; no behavior change (verified the hot path never accumulates locks).

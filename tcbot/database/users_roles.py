@@ -123,6 +123,12 @@ async def is_staff(user_id: int) -> bool:
     owner, admin = await asyncio.gather(
         is_owner(user_id), is_admin(user_id), return_exceptions=True
     )
+    # * Cancellation is not a lookup result: re-raise instead of coercing to
+    # * False, matching can_act_on/resolve_and_check semantics.
+    if isinstance(owner, asyncio.CancelledError):
+        raise owner
+    if isinstance(admin, asyncio.CancelledError):
+        raise admin
     if isinstance(owner, BaseException):
         log.warning("is_staff owner check failed for %d: %s", user_id, owner)
         owner = False

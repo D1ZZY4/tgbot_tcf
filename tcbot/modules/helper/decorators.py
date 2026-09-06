@@ -324,8 +324,24 @@ def owner_only(func: Callable) -> Callable:
                     log.debug("owner_only anon-admin reply failed: %s", exc)
             return None
         uid = update.effective_user.id if update.effective_user else None
-        if uid and await db.users_roles.is_owner(uid):
-            return await func(update, ctx)
+        if uid:
+            # * Fail closed with a retry reply on DB outage instead of letting
+            # * the lookup exception escape with no user feedback. Cancellation
+            # * still propagates.
+            try:
+                authorized = await db.users_roles.is_owner(uid)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("owner_only role lookup failed for %s: %s", uid, exc)
+                if update.effective_message:
+                    try:
+                        await update.effective_message.reply_text(_ERR_ROLE_LOOKUP)
+                    except Exception as reply_exc:
+                        log.debug("owner_only lookup-fail reply failed: %s", reply_exc)
+                return None
+            if authorized:
+                return await func(update, ctx)
         if update.effective_message:
             try:
                 await update.effective_message.reply_text(_ERR_OWNER_ONLY)
@@ -350,8 +366,22 @@ def staff_only(func: Callable) -> Callable:
                     log.debug("staff_only anon-admin reply failed: %s", exc)
             return None
         uid = update.effective_user.id if update.effective_user else None
-        if uid and await db.users_roles.is_staff(uid):
-            return await func(update, ctx)
+        if uid:
+            # * Same fail-closed outage handling as owner_only (see above).
+            try:
+                authorized = await db.users_roles.is_staff(uid)
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("staff_only role lookup failed for %s: %s", uid, exc)
+                if update.effective_message:
+                    try:
+                        await update.effective_message.reply_text(_ERR_ROLE_LOOKUP)
+                    except Exception as reply_exc:
+                        log.debug("staff_only lookup-fail reply failed: %s", reply_exc)
+                return None
+            if authorized:
+                return await func(update, ctx)
         if update.effective_message:
             try:
                 await update.effective_message.reply_text(_ERR_STAFF_ONLY)
@@ -376,10 +406,24 @@ def mod_only(func: Callable) -> Callable:
                     log.debug("mod_only anon-admin reply failed: %s", exc)
             return None
         uid = update.effective_user.id if update.effective_user else None
-        if uid and db.users_roles.role_rank(
-            await db.users_roles.get_effective_role(uid)
-        ) >= db.users_roles.role_rank("developer"):
-            return await func(update, ctx)
+        if uid:
+            # * Same fail-closed outage handling as owner_only (see above).
+            try:
+                authorized = db.users_roles.role_rank(
+                    await db.users_roles.get_effective_role(uid)
+                ) >= db.users_roles.role_rank("developer")
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("mod_only role lookup failed for %s: %s", uid, exc)
+                if update.effective_message:
+                    try:
+                        await update.effective_message.reply_text(_ERR_ROLE_LOOKUP)
+                    except Exception as reply_exc:
+                        log.debug("mod_only lookup-fail reply failed: %s", reply_exc)
+                return None
+            if authorized:
+                return await func(update, ctx)
         if update.effective_message:
             try:
                 await update.effective_message.reply_text(_ERR_MOD_ONLY)
@@ -404,10 +448,26 @@ def basic_mod_only(func: Callable) -> Callable:
                     log.debug("basic_mod_only anon-admin reply failed: %s", exc)
             return None
         uid = update.effective_user.id if update.effective_user else None
-        if uid and db.users_roles.role_rank(
-            await db.users_roles.get_effective_role(uid)
-        ) >= db.users_roles.role_rank("tester"):
-            return await func(update, ctx)
+        if uid:
+            # * Same fail-closed outage handling as owner_only (see above).
+            try:
+                authorized = db.users_roles.role_rank(
+                    await db.users_roles.get_effective_role(uid)
+                ) >= db.users_roles.role_rank("tester")
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.warning("basic_mod_only role lookup failed for %s: %s", uid, exc)
+                if update.effective_message:
+                    try:
+                        await update.effective_message.reply_text(_ERR_ROLE_LOOKUP)
+                    except Exception as reply_exc:
+                        log.debug(
+                            "basic_mod_only lookup-fail reply failed: %s", reply_exc
+                        )
+                return None
+            if authorized:
+                return await func(update, ctx)
         if update.effective_message:
             try:
                 await update.effective_message.reply_text(_ERR_BASIC_MOD_ONLY)
