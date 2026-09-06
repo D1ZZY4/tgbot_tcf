@@ -43,6 +43,13 @@ _DURATION_RE = re.compile(r"^(\d+)(ye|mo|[smhdw])$", re.IGNORECASE)
 _SECS_PER_HOUR: int = 3_600
 _SECS_PER_DAY: int = 86_400
 _DAYS_PER_YEAR: int = 365
+# * Upper bound for an accepted duration (100 years in days). Larger inputs
+# * would overflow timedelta construction or the utc_now() + duration date
+# * math below, crashing the command on malicious input such as 9999999999ye.
+# * Rejected values return None so the token falls back to reason text,
+# * matching the existing invalid-token behavior. All documented examples
+# * (up to 2ye) are far below this cap.
+_MAX_DURATION_DAYS: int = 36500
 
 # * Per-action BuildReason and BuildProof instances; imported by muting.py
 reason = BuildReason("mute")
@@ -59,16 +66,22 @@ def parse_duration(raw: str) -> timedelta | None:
         return None
     value = int(m.group(1))
     unit = m.group(2).lower()
-    mapping = {
-        "s": timedelta(seconds=value),
-        "m": timedelta(minutes=value),
-        "h": timedelta(hours=value),
-        "d": timedelta(days=value),
-        "w": timedelta(weeks=value),
-        "mo": timedelta(days=value * 30),
-        "ye": timedelta(days=value * _DAYS_PER_YEAR),
-    }
-    return mapping.get(unit)
+    try:
+        mapping = {
+            "s": timedelta(seconds=value),
+            "m": timedelta(minutes=value),
+            "h": timedelta(hours=value),
+            "d": timedelta(days=value),
+            "w": timedelta(weeks=value),
+            "mo": timedelta(days=value * 30),
+            "ye": timedelta(days=value * _DAYS_PER_YEAR),
+        }
+        result = mapping.get(unit)
+    except OverflowError:
+        return None
+    if result is None or result.days > _MAX_DURATION_DAYS:
+        return None
+    return result
 
 
 def fmt_duration(td: timedelta | None) -> str:
