@@ -37,7 +37,7 @@ partial read causes failed edits and wrong assumptions. Therefore:
 
 - Always read the full file with the Read tool before editing it. Never
   read with line limits or offsets and never guess the surrounding content.
-- Never use `sed`, `cat`, `head`, `tail`, or `awk` to read file content;
+- Never use `sed`, `cat`, `head`, `tail`, `rg`, or `awk` to read file content;
   use the Read tool. Shell search finds locations; only a full Read gives
   the content to edit against.
 - Read every connected file, not just the target: importers and callers of
