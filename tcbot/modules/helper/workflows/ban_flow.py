@@ -162,17 +162,6 @@ async def _execute_ban(bot: Bot, msgs: list[Message], meta: dict[str, Any]) -> N
                 target_id,
             )
 
-    # * Start old-admin name fetch immediately - runs during proof upload I/O below
-    _old_admin_fname_task = (
-        asyncio.create_task(
-            db.users_cache.get_first_name(
-                existing.get("admin_user_id", admin_id), "Admin"
-            )
-        )
-        if is_update
-        else None
-    )
-
     # * Build proof caption
     if is_update:
         prev_proof_msg_id = existing.get("proof_message_id")
@@ -201,7 +190,7 @@ async def _execute_ban(bot: Bot, msgs: list[Message], meta: dict[str, Any]) -> N
     logs_chat, logs_thread = cfg.logs
 
     if is_update:
-        log_msg_id = await _execute_ban_update(
+        log_msg_id, db_ok = await _execute_ban_update(
             bot,
             existing,
             meta,
@@ -214,11 +203,45 @@ async def _execute_ban(bot: Bot, msgs: list[Message], meta: dict[str, Any]) -> N
     else:
         # * Single canonical ban_id: generated once above and reused for the DB
         # * record, the PM appeal link, and set_log_message_id below.
-        log_msg_id = await _execute_new_ban(
+        log_msg_id, db_ok = await _execute_new_ban(
             bot, meta, proof_msg_id, proof_link, now, logs_chat, logs_thread, ban_id
         )
 
-    # * log_msg_id returned from _execute_ban_update / _execute_new_ban
+    # * Fail closed like execute_unban and the warn auto-ban path: enforcing
+    # * chats without a bans record leaves an un-appealable split brain
+    # * (get_active_ban returns None, so /tcunban and appeal submit cannot
+    # * find it). No group is touched below; the operator retries via /tcban
+    # * once the database recovers.
+    if not db_ok:
+        _db_fail_text = (
+            f"{user_ref(target_id, target_fname)} could not be banned: "
+            "the federation ban record could not be written to the database, "
+            "so no groups were touched. Check the logs and retry with /tcban "
+            "once the database recovers."
+        )
+        if prompt_msg_id and prompt_chat_id:
+            try:
+                await bot.edit_message_text(
+                    _db_fail_text,
+                    chat_id=prompt_chat_id,
+                    message_id=prompt_msg_id,
+                    parse_mode="HTML",
+                    reply_markup=None,
+                )
+            except Exception as exc:
+                log.debug("Ban DB-fail prompt edit failed: %s", exc)
+        else:
+            log.warning(
+                "Ban DB write failed for target=%d with no prompt to update",
+                target_id,
+            )
+        try:
+            await _groups_task
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            log.debug("Discarding pre-fetched groups after DB failure: %s", exc)
+        return
 
     # * set_log_message_id and pre-fetched active_groups in parallel.
     # * _groups_task was started at the top of this function and has been
@@ -392,7 +415,7 @@ async def _execute_ban(bot: Bot, msgs: list[Message], meta: dict[str, Any]) -> N
         f"{applied_line}"
     )
     if prompt_msg_id and prompt_chat_id:
-        _, upsert_result, pm_result = await asyncio.gather(
+        edit_result, upsert_result, pm_result = await asyncio.gather(
             bot.edit_message_text(
                 summary,
                 chat_id=prompt_chat_id,
@@ -406,6 +429,8 @@ async def _execute_ban(bot: Bot, msgs: list[Message], meta: dict[str, Any]) -> N
             ),
             return_exceptions=True,
         )
+        if isinstance(edit_result, BaseException):
+            log.debug("Ban summary prompt edit failed: %s", edit_result)
         if isinstance(upsert_result, BaseException):
             log.error("upsert_user failed for target=%d: %s", target_id, upsert_result)
     else:
@@ -444,8 +469,12 @@ async def _execute_ban_update(
     prev_proof_link: str | None,
     logs_chat: int,
     logs_thread: int | None,
-) -> int:
-    """Build log text, keyboard, and DB update for an existing ban re-enforcement."""
+) -> tuple[int, bool]:
+    """Build log text, keyboard, and DB update for an existing ban re-enforcement.
+
+    Returns ``(log_msg_id, db_ok)`` so the caller can fail closed when the
+    ``bans`` write fails instead of enforcing chats without a record.
+    """
     target_id: int = meta.get("ban_target_id") or 0
     target_fname: str = meta.get("ban_target_fname", str(target_id))
     admin_id: int = meta.get("ban_admin_id") or 0
@@ -506,7 +535,8 @@ async def _execute_ban_update(
         bot.send_message(logs_chat, log_text, **send_kwargs),
         return_exceptions=True,
     )
-    if isinstance(db_result, BaseException):
+    db_ok = not isinstance(db_result, BaseException)
+    if not db_ok:
         log.error("update_ban failed for ban_id=%s: %s", ban_id, db_result)
 
     log_msg_id: int = 0
@@ -515,7 +545,7 @@ async def _execute_ban_update(
         log.info("Ban log posted: ban_id=%s msg_id=%s", ban_id, log_msg_id)
     else:
         log.error("Ban log send failed: %s", log_result)
-    return log_msg_id
+    return log_msg_id, db_ok
 
 
 async def _execute_new_ban(
@@ -527,8 +557,12 @@ async def _execute_new_ban(
     logs_chat: int,
     logs_thread: int | None,
     ban_id: str,
-) -> int:
-    """Build log text, keyboard, and DB insert for a fresh ban."""
+) -> tuple[int, bool]:
+    """Build log text, keyboard, and DB insert for a fresh ban.
+
+    Returns ``(log_msg_id, db_ok)`` so the caller can fail closed when the
+    ``bans`` write fails instead of enforcing chats without a record.
+    """
     target_id: int = meta.get("ban_target_id") or 0
     target_fname: str = meta.get("ban_target_fname", str(target_id))
     admin_id: int = meta.get("ban_admin_id") or 0
@@ -564,7 +598,8 @@ async def _execute_new_ban(
         bot.send_message(logs_chat, log_text, **send_kwargs),
         return_exceptions=True,
     )
-    if isinstance(db_result, BaseException):
+    db_ok = not isinstance(db_result, BaseException)
+    if not db_ok:
         log.error("create_ban failed for ban_id=%s: %s", ban_id, db_result)
 
     log_msg_id: int = 0
@@ -573,7 +608,7 @@ async def _execute_new_ban(
         log.info("Ban log posted: ban_id=%s msg_id=%s", ban_id, log_msg_id)
     else:
         log.error("Ban log send failed: %s", log_result)
-    return log_msg_id
+    return log_msg_id, db_ok
 
 
 # ───────────────── Proof collection state handlers ──────────────── #

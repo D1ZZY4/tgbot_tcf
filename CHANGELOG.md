@@ -41,6 +41,12 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Fixed
 
+- **Ban fail-closed on database write failure** (`tcbot/modules/helper/workflows/ban_flow.py`): `create_ban` / `update_ban` failures were only logged while the flow still fanned out `ban_chat_member`, sent a PM with an appeal link for a record that does not exist, and reported success. The helpers now return `(log_msg_id, db_ok)` and `_execute_ban` aborts before any group is touched, edits the prompt with a database-retry notice, and discards the pre-fetched groups. This mirrors the warn auto-ban and `execute_unban` fail-closed paths and avoids an un-appealable split brain.
+
+- **Ban reply reason keeps leading ID-like tokens** (`tcbot/modules/banning.py`): reply-target commands derived `has_explicit_target` from the shape of `raw_args[0]` alone, so reply + `/tcb 12345 spamming` dropped `12345` from the stored reason. The entry now mirrors `extract_target` priority 1 (including the anonymous-admin sender_chat skip) and treats every argument as reason text on a reply target. Entry asserts became guard returns so a missing message/user never crashes the handler.
+
+- **Ban executor cleanup** (`tcbot/modules/helper/workflows/ban_flow.py`): removed the dead pre-fetched old-admin name task in `_execute_ban` (created but never awaited; the update path fetches the name itself), and the final prompt-edit result is now logged instead of discarded. No success-path behavior change.
+
 - **Outage replies distinguish server errors from denials** (`tcbot/modules/disconnecting.py`, `tcbot/modules/admins.py`): `cmd_tcdisconnect` answered a DB outage with "not connected" and the promo-decision callback answered with "founder only": both misreport transient failures as definitive verdicts. Lookup exceptions now get distinct retry replies; denial texts only fire on proven verdicts.
 
 - **Secret-scrub hardening on error paths** (`tcbot/utils/error_reporter.py`, `tcbot/__main__.py`): the URI-auth pattern required a username, so `redis://:password@host` echoes shipped verbatim (verified before/after at runtime; bare hosts and ports unaffected). New public `scrub_text` also covers the console error context, and the raw `Update` repr was replaced by its numeric ID. Markers are idempotent under re-scrub.
