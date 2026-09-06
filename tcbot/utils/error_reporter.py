@@ -389,7 +389,11 @@ def build_error_message(
 
     tb_block = ""
     if exc and exc.__traceback__:
-        tb_block = f"\n\n{bold('Traceback:')}\n{pre(_condensed_tb(exc))}"
+        # * _condensed_tb embeds str(exc), which can echo credential-shaped
+        # * substrings (bot token, Mongo URI); scrub before shipping.
+        tb_block = (
+            f"\n\n{bold('Traceback:')}\n{pre(_scrub_secrets(_condensed_tb(exc)))}"
+        )
 
     ctx_block = ""
     if context:
