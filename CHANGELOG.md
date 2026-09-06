@@ -37,6 +37,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Fixed
 
+- **Benign Telegram refusals no longer trip the circuit breaker** (`tcbot/utils/dispatch.py`): `BadRequest` subclasses `NetworkError` in PTB, so the shared except clause counted every benign 400 (`USER_NOT_PARTICIPANT`, `CHAT_NOT_FOUND`, ...) toward the 5-consecutive-failure threshold. A federation ban touching mostly non-member groups tripped the breaker mid-fan-out and skipped the remaining groups unenforced (also contradicting the module docstring). `BadRequest` now bypasses the counter via its own clause (tuple-except also split per project convention). Verified at runtime against installed PTB 22.8: 7 consecutive `BadRequest` leave the circuit closed with 0 counted; 5 `TimedOut` still trip it open.
+
 - **Bounded polling bootstrap retries** (`tcbot/__main__.py`): `bootstrap_retries=-1` hung forever on a network partition during startup, invisible to the run-bot watchdog (which restarts on death, not hangs); upstream PTB itself discourages indefinite retries. Now 5 retries, then the loud crash-and-restart path. Verified against installed PTB 22.8 source that `InvalidToken` aborts immediately either way.
 
 - **Ban-ID collision retry for auto-generated IDs** (`tcbot/database/bans_db.py`): `create_ban` propagated a `DuplicateKeyError` on 10-char random ID collision, failing the moderation action. Retries once with a fresh ID; explicit caller-supplied IDs (reused for appeal links and log patches) still propagate to avoid orphaning those references.

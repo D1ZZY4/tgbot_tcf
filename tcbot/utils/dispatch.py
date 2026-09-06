@@ -94,7 +94,22 @@ async def fan_out[T](
                 result = await thunk()
                 _cb.telegram.record_success()
                 return result
-            except (TimedOut, NetworkError) as exc:
+            except TimedOut as exc:
+                _cb.telegram.record_failure()
+                log.debug("fan_out: network error (counted against circuit): %s", exc)
+                return exc
+            except NetworkError as exc:
+                # ! CRITICAL: BadRequest subclasses NetworkError in PTB, but a
+                # ! 400 is an API refusal (user not in chat, chat gone), never
+                # ! congestion. Counting refusals tripped the breaker after 5
+                # ! consecutive fan-out refusals and skipped the remaining
+                # ! groups unenforced. Refusals must not touch the circuit.
+                if isinstance(exc, BadRequest):
+                    _cb.telegram.release_probe()
+                    log.debug(
+                        "fan_out: API refusal (not counted against circuit): %s", exc
+                    )
+                    return exc
                 _cb.telegram.record_failure()
                 log.debug("fan_out: network error (counted against circuit): %s", exc)
                 return exc
