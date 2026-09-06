@@ -13,6 +13,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 - **Read-tool rule wording** (`.agents/rules/tooling-validation.md`): the read-before-work rule now names `rg` alongside the other shell tools that must not substitute for full file reads.
 
+- **Ave Studio renamed to Ave Labs**: copyright holder renamed in all 79 occurrences (Python module headers, `LICENSE`, `README.md` license line, `code-style.md` example header). No behavior change.
+
 ### Documentation
 
 - **README rewrite** (`README.md`): replaced the generated-sounding long form (full 25-row config table, per-workflow CI detail, mermaid diagram, repo tree, 11-link index) with a concise engineer-facing version: one-line value proposition, requirements, copy-paste quick start, six concrete feature bullets with real command names, required-only config table with a pointer to `config.env.example` and the setup guide, short run/deploy/health sections, full validation block, and six curated doc links. All claims verified against `pyproject.toml`, `config.env.example`, `docker-compose.yml`, `tcbot/alive.py`, and the command modules. No behavior change.
@@ -28,6 +30,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 - **uv run commands** (`README.md`, `.agents/rules/tooling-validation.md`, `.agents/rules/docs-rules.md`): run, lint, and type-check commands now use the `uv run` prefix (`uv run python -m tcbot`, `uv run ruff ...`, `uv run --with pyright pyright ...`), matching the Replit entrypoint in `.replit`. The `--with` flag is needed because pyright is not a project dependency (verified: 0 errors).
 
 ### Fixed
+
+- **Cron endpoint fail-closed without secret** (`api/cron.py`, `tcbot/__init__.py`, `docs/operations/vercel.md`, `config.env.example`): an empty `CRON_SECRET` left `/api/cron` open to anyone (fail-open by design comment), allowing unauthenticated warn-expiry database mutations. The endpoint now refuses every request with `503` when no secret is configured, mirroring `api/webhook.py`. Docs and the env template now state the fail-closed contract; deployments relying on the open endpoint must set `CRON_SECRET`.
 
 - **Ban album double-execution guard** (`tcbot/modules/helper/workflows/ban_flow.py`): the single-media proof path had a `ban_executing` double-submit guard, but the album path did not: two rapid albums (distinct `media_group_id`) could each invoke `_execute_ban` (double fan-out, double PM/log, plus a duplicate-active-ban race on concurrent creates). `on_proof_received` now ignores proof input while `ban_executing` is set and sets the flag synchronously when scheduling the first album flush (check-and-set without `await`, so concurrent updates cannot interleave); `_flush_album` already clears the flag via `_clear_ban_state`. First submission wins.
 

@@ -1,6 +1,6 @@
 # © Copyright 2024 - 2026 Transsion Core
 # © Copyright 2024 - 2026 Dizzy
-# © Copyright 2026 Ave Studio
+# © Copyright 2026 Ave Labs
 
 """Vercel Cron maintenance endpoint (route: /api/cron, see vercel.json)."""
 
@@ -30,18 +30,20 @@ class handler(BaseHTTPRequestHandler):
 
     def do_GET(self) -> None:
         """Verify the cron secret, then prune expired warns when enabled."""
-        # * Vercel Cron sends `Authorization: Bearer <CRON_SECRET>` when the
-        # * project has CRON_SECRET configured.  Enforcement is fail-open only
-        # * when the operator left CRON_SECRET empty; production must set it.
+        # ! CRITICAL: fail closed like api/webhook.py. An empty CRON_SECRET
+        # ! used to leave this endpoint open to anyone; the expiry run mutates
+        # ! the database, so a missing secret refuses instead. Set CRON_SECRET
+        # ! in production (see docs/operations/vercel.md).
         secret = cfg.cron_secret
-        if secret:
-            auth = self.headers.get("Authorization", "")
-            if not hmac.compare_digest(auth, f"Bearer {secret}"):
-                log.warning("cron: rejected request with invalid bearer token.")
-                self._reply(401, "Unauthorized")
-                return
-        else:
-            log.warning("cron: CRON_SECRET is not configured; endpoint is open.")
+        if not secret:
+            log.error("cron: CRON_SECRET is not configured; refusing request.")
+            self._reply(503, "cron secret not configured")
+            return
+        auth = self.headers.get("Authorization", "")
+        if not hmac.compare_digest(auth, f"Bearer {secret}"):
+            log.warning("cron: rejected request with invalid bearer token.")
+            self._reply(401, "Unauthorized")
+            return
 
         try:
             status, body = run(run_warn_expiry())

@@ -1,6 +1,6 @@
 # © Copyright 2024 - 2026 Transsion Core
 # © Copyright 2024 - 2026 Dizzy
-# © Copyright 2026 Ave Studio
+# © Copyright 2026 Ave Labs
 
 """Configuration singleton: loads env vars into a frozen dataclass and exposes a thin cfg adapter."""
 
@@ -560,7 +560,8 @@ class _CfgAdapter:
 
         Compared against the ``Authorization: Bearer <token>`` header that
         Vercel Cron sends when CRON_SECRET is set on the project. An empty
-        value leaves the endpoint unprotected; always set it in production.
+        value makes /api/cron refuse every request (fail closed); always set
+        it in production.
         """
         return self._c.cron_secret
 

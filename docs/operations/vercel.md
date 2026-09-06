@@ -58,7 +58,7 @@ Never commit real values.
 | `MONGODB_URI` | Yes | Reachable from Vercel (Atlas with network access for `0.0.0.0/0`, or equivalent). |
 | `OWNER_ID` | Yes | Seeded as Founder on first init. |
 | `WEBHOOK_SECRET` | **Yes** | Explicit secret for update validation. The endpoint fails closed (`503`) without it: the auto-generated startup token changes per cold start and can never match Telegram's copy. |
-| `CRON_SECRET` | Yes (production) | Bearer token for `/api/cron`. Without it the endpoint is open. |
+| `CRON_SECRET` | **Yes** | Bearer token for `/api/cron`. The endpoint fails closed (`503`) without it. |
 | `WEBHOOK_URL` | Build-time reference | Set to `https://<project>.vercel.app` so `set_webhook` (step 3) points at the deployment. Not read by the functions themselves. |
 | `DB_NAME` | No | Default `tcbot`. |
 | `REDIS_URL` | No | Recommended: without Redis, rate limiting and role caches are per-instance in-memory. Upstash Redis works. |
@@ -136,4 +136,5 @@ to `0`). Re-run after every redeploy that changes the project URL.
 | First update slow, then fast | Cold start (Mongo connect + indexes) | Expected; warms after first invocation. |
 | `Conflict` errors in logs | Another instance still running (Replit/polling) | Stop all other transports for this token. |
 | Cron → `401` | Wrong/missing bearer | Send `Authorization: Bearer <CRON_SECRET>`; compare with project env. |
+| Cron → `503` | `CRON_SECRET` unset | Set explicit `CRON_SECRET` and redeploy. |
 | Cron → `200` "disabled" | `WARN_EXPIRY_DAYS=0` | Set `> 0` to enable pruning. |
