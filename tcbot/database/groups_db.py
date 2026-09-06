@@ -1,6 +1,6 @@
 # © Copyright 2024 - 2026 Transsion Core
 # © Copyright 2024 - 2026 Dizzy
-# © Copyright 2026 Ave Studio
+# © Copyright 2026 Ave Labs
 
 """Federated groups and pending joins collection helpers."""
 
@@ -96,9 +96,12 @@ async def add_group(chat_id: int, title: str, added_by: int) -> None:
                     "chat_id": chat_id,
                     "title": title,
                     "added_by": added_by,
-                    "added_date": utc_now(),
                     "is_active": True,
-                }
+                },
+                # * First-connect date must survive re-adds and title
+                # * refreshes: stats shows it as the join date, so keep it in
+                # * $setOnInsert instead of rewriting history on every add.
+                "$setOnInsert": {"added_date": utc_now()},
             },
             upsert=True,
         )
@@ -112,10 +115,11 @@ async def deactivate_group(chat_id: int) -> bool:
     r = await db_call(
         _groups().update_one({"chat_id": chat_id}, {"$set": {"is_active": False}})
     )
-    if r.matched_count > 0:
-        connected_cache.put(chat_id, False)  # noqa: FBT003
+    if r.matched_count == 0:
+        return False
+    connected_cache.put(chat_id, False)  # noqa: FBT003
     active_groups_cache.invalidate(_ALL_GROUPS_KEY)
-    return r.matched_count > 0
+    return True
 
 
 async def active_groups() -> list[GroupDoc]:
@@ -160,7 +164,8 @@ async def migrate_group(old_chat_id: int, new_chat_id: int) -> bool:
         return_exceptions=True,
     )
     matched_any = False
-    for r in results:
+    group_matched = False
+    for i, r in enumerate(results):
         if isinstance(r, BaseException):
             log.error(
                 "migrate_group (%d -> %d) DB call failed: %s",
@@ -170,10 +175,15 @@ async def migrate_group(old_chat_id: int, new_chat_id: int) -> bool:
             )
         elif r.matched_count > 0:
             matched_any = True
+            if i == 0:
+                group_matched = True
     if matched_any:
         connected_cache.put(old_chat_id, False)  # noqa: FBT003
-        connected_cache.put(new_chat_id, True)  # noqa: FBT003
-        active_groups_cache.invalidate(_ALL_GROUPS_KEY)
+        # * Only mark the new chat connected when its federated_groups row
+        # * actually moved: a pending-only migration must not poison is_connected.
+        if group_matched:
+            connected_cache.put(new_chat_id, True)  # noqa: FBT003
+            active_groups_cache.invalidate(_ALL_GROUPS_KEY)
     return matched_any
 
 

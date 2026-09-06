@@ -37,6 +37,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Fixed
 
+- **Group record precision fixes** (`tcbot/database/groups_db.py`): `add_group` rewrote `added_date` on every re-add, corrupting the first-connect date shown in stats; it now uses `$setOnInsert`. `deactivate_group` busted the cached groups list even when nothing matched; no-match is now a pure no-op. `migrate_group` marked the new chat connected (120 s cache) even when only a pending row moved; the `True` mark and list invalidation now require the federated row itself to move.
+
 - **Batch first-name lookups check L1 first** (`tcbot/database/users_cache.py`): `get_first_names_batch` (used by check/stats renders) hit MongoDB on every call even for cached users. L1 hits are now served without I/O and only uncached IDs trigger the batch query; not-found IDs cache the sentinel. Found rows are deliberately not written back (the projection omits `last_name`, which would corrupt triple change detection).
 
 - **Cache L3 write no longer blocks the hot path** (`tcbot/database/cache.py`): `TwoLevelCache.get_or_fetch` awaited the Redis SET after every DB fetch, adding up to a full Redis round-trip (10 s socket timeout) to each L1 miss even though the value was already served from L1. The write is now fire-and-forget; FIFO ordering against later invalidates is preserved by the mutation chain and failures still surface via the task log callback.
