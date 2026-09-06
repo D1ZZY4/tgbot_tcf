@@ -6,6 +6,10 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Changed
 
+- **Health mongodb field follows the live circuit** (`tcbot/alive.py`): `is_connected()` is a sticky startup flag, so a partitioned MongoDB still read `ok` while only the overall verdict degraded via the breaker. The field now ANDs the live mongodb-breaker state.
+
+- **Owner DMs throttled per incident** (`tcbot/utils/error_reporter.py`): owner-only errors (duplicate-instance `Conflict` storms) repeated every 30 s with no backstop. Repeats of one fingerprint past 3/hour are now suppressed (verified: 3 sends then silence); each new incident still notifies.
+
 - **Active-mute TTL pruning** (`tcbot/database/mongos.py`, `tcbot/database/documents.py`, `docs/architecture/database.md`): expired timed mutes were only filtered at query time and accumulated forever. A TTL index on `active_mutes.until_date` now auto-deletes them; permanent mutes (`None`/missing) never TTL-expire, matching the existing query filters, so only rows the queries already ignore are pruned.
 
 - **Warn-counter repair failures escalated to error** (`tcbot/database/warns_db.py`): `clear_warns`/`clear_all_warns` logged counter-delete failures at warning level, but a surviving counter keeps stale counts that later warns increment from (threshold misfires needing manual repair). Now error level so the gap ships to `LOGS_ERRORS` like other state-repair needs.
@@ -36,6 +40,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 - **uv run commands** (`README.md`, `.agents/rules/tooling-validation.md`, `.agents/rules/docs-rules.md`): run, lint, and type-check commands now use the `uv run` prefix (`uv run python -m tcbot`, `uv run ruff ...`, `uv run --with pyright pyright ...`), matching the Replit entrypoint in `.replit`. The `--with` flag is needed because pyright is not a project dependency (verified: 0 errors).
 
 ### Fixed
+
+- **Secret-scrub hardening on error paths** (`tcbot/utils/error_reporter.py`, `tcbot/__main__.py`): the URI-auth pattern required a username, so `redis://:password@host` echoes shipped verbatim (verified before/after at runtime; bare hosts and ports unaffected). New public `scrub_text` also covers the console error context, and the raw `Update` repr was replaced by its numeric ID. Markers are idempotent under re-scrub.
 
 - **About page no longer double-escapes the community name** (`tcbot/modules/about.py`): `_CNAME` was pre-escaped then passed through `bold()`/`italic()` (which escape), rendering `&amp;` for names with `&<>"'`. The constant is now raw with escaping at each use site (verified the other raw interpolations stay escaped).
 

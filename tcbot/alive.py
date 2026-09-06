@@ -51,6 +51,14 @@ def health() -> tuple[str, int, dict[str, str]]:
     mongodb_ok = mongos.is_connected()
     scheduler_ok = sched_mod.is_ready()
 
+    # * is_connected() is a sticky startup flag (never cleared on partition),
+    # * so AND it with the live circuit state: after 5 consecutive DB failures
+    # * the mongodb breaker opens and the field must read error, matching the
+    # * overall verdict below.
+    db_circuit_open = _cb.mongodb.state.value == "open"
+    if db_circuit_open:
+        mongodb_ok = False
+
     rc = redis_client.client()
     if rc is not None:
         redis_status = "ok"
