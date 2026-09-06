@@ -96,13 +96,18 @@ async def cmd_kick(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     """
     msg = update.effective_message
     admin = update.effective_user
-    assert msg is not None
-    assert admin is not None
-    assert ctx.user_data is not None
+    if msg is None or admin is None or ctx.user_data is None:
+        return ConversationHandler.END
 
     args = parse_cmd_args(msg.text)
-    has_explicit_target = bool(args) and (
-        args[0].lstrip("-").isdigit() or args[0].startswith("@")
+    # * Reply wins in extract_target, so every arg is reason text when the
+    # * command replies to a user. Checking the shape of args[0] alone
+    # * would drop a leading numeric/@ token that belongs to the reason
+    # * (e.g. reply + "/tck 12345 spamming" lost "12345").
+    has_explicit_target = (
+        not extraction.has_reply_target(msg)
+        and bool(args)
+        and (args[0].lstrip("-").isdigit() or args[0].startswith("@"))
     )
     target_id, target_name = await extraction.extract_target(update, args, ctx.bot)
 

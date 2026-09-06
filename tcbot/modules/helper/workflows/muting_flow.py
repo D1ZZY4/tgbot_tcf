@@ -55,6 +55,8 @@ _MAX_DURATION_DAYS: int = 36500
 reason = BuildReason("mute")
 proof = BuildProof("mute")
 
+_ERR_DB_RETRY = "I couldn't reach the database right now. Please try again in a moment."
+
 
 # ──────────────────────── Duration helpers ──────────────────────── #
 
@@ -125,8 +127,32 @@ async def _execute_mute(bot: Bot, update: Update, meta: dict) -> None:
     duration_secs = int(duration.total_seconds()) if duration else None
     admin_fname = meta.get("mute_admin_fname", "Admin")
 
-    # * Apply across all connected groups + primary groups - semaphore-bounded
-    groups = await db.groups_db.active_groups()
+    # * Guard up front: without the origin chat there is no audit row to
+    # * write and no summary target, so bail before any side effect.
+    chat_id = update.effective_chat.id if update.effective_chat else None
+    if chat_id is None:
+        log.warning("_execute_mute called without effective_chat")
+        return
+
+    # * Fail closed like the ban flow and the warn auto-ban: a groups-fetch
+    # * outage aborts before anything is touched.
+    try:
+        groups = await db.groups_db.active_groups()
+    except Exception:
+        log.exception("_execute_mute: active_groups failed for target=%d", target_id)
+        try:
+            await bot.edit_message_text(
+                f"{user_ref(target_id, target_fname)} could not be muted: "
+                "the group list could not be loaded from the database, so no "
+                "groups were touched. Check the logs and retry with /tcmute "
+                "once the database recovers.",
+                chat_id=prompt_chat,
+                message_id=prompt_id,
+                parse_mode="HTML",
+            )
+        except Exception as exc:
+            log.debug("_execute_mute groups-fail edit failed: %s", exc)
+        return
     _primary_ids = [cid for cid in (cfg.main_group, cfg.exec_group) if cid]
     _existing_ids = {cid for cid in (grp.get("chat_id") for grp in groups) if cid}
     groups = groups + [
@@ -134,6 +160,39 @@ async def _execute_mute(bot: Bot, update: Update, meta: dict) -> None:
         for pid in _primary_ids
         if pid not in _existing_ids
     ]
+
+    # * Persist the mute record before touching any group. Enforcing chats
+    # * without an active_mutes row leaves an un-unmutable split brain:
+    # * /tcunmute guards on get_active_mute and would refuse, forcing a
+    # * manual per-group unrestrict. A failed write aborts with no group
+    # * touched; the moderator retries once the database recovers.
+    log_r, active_r = await asyncio.gather(
+        db.mutes_db.log_mute(
+            target_id, chat_id, reason_text, admin_id, duration_secs=duration_secs
+        ),
+        db.mutes_db.set_active_mute(target_id, until=until),
+        return_exceptions=True,
+    )
+    if isinstance(log_r, BaseException) or isinstance(active_r, BaseException):
+        log.error(
+            "_execute_mute: mute DB write failed for target=%d (log=%s active=%s)",
+            target_id,
+            log_r,
+            active_r,
+        )
+        try:
+            await bot.edit_message_text(
+                f"{user_ref(target_id, target_fname)} could not be muted: "
+                "the mute record could not be written to the database, so no "
+                "groups were touched. Check the logs and retry with /tcmute "
+                "once the database recovers.",
+                chat_id=prompt_chat,
+                message_id=prompt_id,
+                parse_mode="HTML",
+            )
+        except Exception as exc:
+            log.debug("_execute_mute DB-fail edit failed: %s", exc)
+        return
     # * Re-check the target's effective role immediately before the
     # * restrict fan-out. The auto-demote in ``cmd_mute`` ran before the
     # * proof collection window; if the target was re-promoted by a
@@ -231,15 +290,10 @@ async def _execute_mute(bot: Bot, update: Update, meta: dict) -> None:
         dur_str,
     )
 
-    # * Log to DB, persist active mute, post to log channel, and edit summary - all in parallel
-    chat_id = update.effective_chat.id if update.effective_chat else None
-    if chat_id is None:
-        return
-    results2 = await asyncio.gather(
-        db.mutes_db.log_mute(
-            target_id, chat_id, reason_text, admin_id, duration_secs=duration_secs
-        ),
-        db.mutes_db.set_active_mute(target_id, until=until),
+    # * Post to the log channel and edit the prompt summary in parallel.
+    # * The audit row and the active-mute record already landed before the
+    # * fan-out above, so only Telegram deliveries remain here.
+    log_send_r, edit_r = await asyncio.gather(
         bot.send_message(
             lc, log_text, parse_mode="HTML", message_thread_id=lt, reply_markup=proof_kb
         ),
@@ -252,13 +306,9 @@ async def _execute_mute(bot: Bot, update: Update, meta: dict) -> None:
         ),
         return_exceptions=True,
     )
-    if isinstance(results2[0], BaseException):
-        log.error("log_mute DB write failed for target=%d: %s", target_id, results2[0])
-    if isinstance(results2[1], BaseException):
-        log.error("set_active_mute failed for target=%d: %s", target_id, results2[1])
-    if isinstance(results2[2], BaseException):
-        log.error("Mute log send failed: %s", results2[2])
-    if isinstance(results2[3], BaseException):
+    if isinstance(log_send_r, BaseException):
+        log.error("Mute log send failed: %s", log_send_r)
+    if isinstance(edit_r, BaseException):
         msg = update.effective_message
         if msg:
             try:
@@ -289,7 +339,17 @@ async def execute_unmute(
     # * Without this check, execute_unmute would fan restrict_chat_member to all
     # * connected groups even when the user was never muted (or already unmuted),
     # * producing a misleading "restored N/N groups" success reply for a no-op.
-    active_mute = await db.mutes_db.get_active_mute(target_id)
+    # * A failed read fails closed with a retry reply: treating an outage as
+    # * "no active mute" would refuse a legitimate unmute.
+    try:
+        active_mute = await db.mutes_db.get_active_mute(target_id)
+    except Exception:
+        log.exception("get_active_mute failed for target=%d", target_id)
+        try:
+            await msg.reply_text(_ERR_DB_RETRY)
+        except Exception as exc:
+            log.debug("execute_unmute DB-fail reply failed: %s", exc)
+        return
     if active_mute is None:
         try:
             await msg.reply_text(

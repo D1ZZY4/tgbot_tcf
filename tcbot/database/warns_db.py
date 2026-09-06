@@ -170,7 +170,14 @@ async def warn_count(user_id: int, chat_id: int) -> int:
 
 
 async def clear_warns(user_id: int, chat_id: int) -> int:
-    """Remove ALL warnings for a user in a specific chat."""
+    """Remove ALL warnings for a user in a specific chat.
+
+    Raises the warns-delete failure instead of returning 0: a 0 return
+    means "nothing to clear", and reporting an outage as an empty state
+    would mislead the moderator. Counter-delete failures stay
+    error-logged but non-fatal (the stale counter is flagged for repair
+    while the requested clear itself succeeded).
+    """
     warn_del, _cnt_del = await asyncio.gather(
         db_call(_warns().delete_many(_warn_key(user_id, chat_id))),
         db_call(_warn_counts().delete_one(_warn_key(user_id, chat_id))),
@@ -185,7 +192,15 @@ async def clear_warns(user_id: int, chat_id: int) -> int:
             chat_id,
             _cnt_del,
         )
-    return warn_del.deleted_count if not isinstance(warn_del, BaseException) else 0
+    if isinstance(warn_del, BaseException):
+        log.error(
+            "clear_warns warns delete failed for user=%d chat=%d: %s",
+            user_id,
+            chat_id,
+            warn_del,
+        )
+        raise warn_del
+    return warn_del.deleted_count
 
 
 async def clear_all_warns(user_id: int) -> int:
@@ -194,6 +209,10 @@ async def clear_all_warns(user_id: int) -> int:
     Used on federation auto-ban to ensure the user starts with a clean warn
     slate in every group after a potential unban, preventing immediate re-ban
     from stale per-group counts accumulated before the federation ban.
+
+    Raises the warns-delete failure like :func:`clear_warns` (a 0 return
+    means "nothing cleared"); callers running inside ``gather`` inspect the
+    captured exception instead.
     """
     warn_del, _cnt_del = await asyncio.gather(
         db_call(_warns().delete_many({"user_id": user_id})),
@@ -207,7 +226,14 @@ async def clear_all_warns(user_id: int) -> int:
             user_id,
             _cnt_del,
         )
-    return warn_del.deleted_count if not isinstance(warn_del, BaseException) else 0
+    if isinstance(warn_del, BaseException):
+        log.error(
+            "clear_all_warns warns delete failed for user=%d: %s",
+            user_id,
+            warn_del,
+        )
+        raise warn_del
+    return warn_del.deleted_count
 
 
 async def get_warns(user_id: int, chat_id: int) -> list[WarnDoc]:

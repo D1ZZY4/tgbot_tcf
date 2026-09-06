@@ -139,6 +139,14 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 - **Staff-guard outage reply honesty** (`tcbot/modules/helper/decorators.py`): `staff_only` used `is_staff`, which coerces lookup failures to `False`, so a database outage replied with a false "Staff and Founder only" denial. It now reads the cached effective role like `mod_only`/`basic_mod_only` and the appeal-review path (which documents the same "propagate, then retry hint" rationale), so outages get the retry text. Fail-closed behavior preserved; `is_staff` keeps its historical coerce-to-False contract for its remaining callers.
 
+- **Kick/mute/warn replies keep leading ID-like reason tokens** (`tcbot/modules/helper/extraction.py`, `tcbot/modules/kicking.py`, `muting.py`, `warnings.py`, `banning.py`): the same shape-only `has_explicit_target` defect fixed for bans also dropped a leading numeric/`@` token from the reason on reply-target kick/mute/warn commands (reply + `/tck 12345 spamming` lost `12345`). New shared `extraction.has_reply_target()` mirrors `extract_target` priority 1 including the anonymous-admin skip; all four entries use it and the ban inline block is consolidated onto it. Entry asserts became guard returns (banning.py precedent). No behavior change for non-reply commands.
+
+- **Mute persists the record before enforcing** (`tcbot/modules/helper/workflows/muting_flow.py`): the restrict fan-out ran before `log_mute`/`set_active_mute`, so a database outage left the user muted in every group with no `active_mutes` row that `/tcunmute` refuses without, forcing a manual per-group unrestrict. Both writes now land first and either failing aborts with a retry prompt-edit and no group touched (mirroring the ban flow and the warn auto-ban). The origin-chat guard moved above all side effects.
+
+- **Mute keeps unparsable duration tokens in the reason** (`tcbot/modules/muting.py`): a regex-valid but overflowing/over-cap token was popped and then dropped when `parse_duration` returned `None`, contradicting the documented "treated as part of the reason text". The token is now popped only after a successful parse.
+
+- **Warn/mute executors answer database outages** (`tcbot/modules/helper/workflows/warning_flow.py`, `muting_flow.py`, `tcbot/database/warns_db.py`): `add_warn`, the federation aggregate, warn count/list/reset reads, and the unmute guard propagated failures out of the conversation with no moderator reply. Each now replies with a retry notice (the aggregate failure reports the already-recorded warn honestly). `clear_warns`/`clear_all_warns` raise warns-delete failures instead of returning 0, so an outage is never misreported as an empty warn state (the previously dead `BaseException` check in the auto-ban path is live again); counter-delete failures stay error-logged but non-fatal. Executor asserts became guard returns.
+
 ## [6.5.0] - 2026-09-06
 
 ### Changed

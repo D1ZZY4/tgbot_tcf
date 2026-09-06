@@ -114,13 +114,16 @@ async def cmd_mute(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     """
     msg = update.effective_message
     admin = update.effective_user
-    assert msg is not None
-    assert admin is not None
-    assert ctx.user_data is not None
+    if msg is None or admin is None or ctx.user_data is None:
+        return ConversationHandler.END
 
     raw_args = parse_cmd_args(msg.text)
-    has_explicit_target = bool(raw_args) and (
-        raw_args[0].lstrip("-").isdigit() or raw_args[0].startswith("@")
+    # * Reply wins in extract_target, so every arg is duration/reason text
+    # * when the command replies to a user (see kicking.py for the rationale).
+    has_explicit_target = (
+        not extraction.has_reply_target(msg)
+        and bool(raw_args)
+        and (raw_args[0].lstrip("-").isdigit() or raw_args[0].startswith("@"))
     )
     target_id, target_fname = await extraction.extract_target(update, raw_args, ctx.bot)
 
@@ -178,7 +181,14 @@ async def cmd_mute(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
     duration = None
     if remaining_args and _DURATION_RE.match(remaining_args[0]):
-        duration = parse_duration(remaining_args.pop(0))
+        # * Pop the token only when it parses: a regex-valid but
+        # * unparsable token (overflow past timedelta range or above the
+        # * 100-year cap) stays in the reason text instead of being
+        # * silently dropped from the moderator's message.
+        parsed = parse_duration(remaining_args[0])
+        if parsed is not None:
+            duration = parsed
+            remaining_args.pop(0)
 
     inline_reason = parse_inline_reason(remaining_args, has_explicit_target=False)
     target_mention = mention(target_id, target_fname or str(target_id))
@@ -259,8 +269,8 @@ async def cmd_unmute(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """
     msg = update.effective_message
     admin = update.effective_user
-    assert msg is not None
-    assert admin is not None
+    if msg is None or admin is None:
+        return
     args = parse_cmd_args(msg.text)
     target_id, target_name = await extraction.extract_target(update, args, ctx.bot)
     if not target_id:

@@ -124,11 +124,16 @@ async def cmd_warn_entry(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
     admin = update.effective_user
     if admin is None:
         return ConversationHandler.END
-    assert ctx.user_data is not None
+    if ctx.user_data is None:
+        return ConversationHandler.END
 
     args = parse_cmd_args(msg.text)
-    has_explicit_target = bool(args) and (
-        args[0].lstrip("-").isdigit() or args[0].startswith("@")
+    # * Reply wins in extract_target, so every arg is reason text when the
+    # * command replies to a user (see kicking.py for the rationale).
+    has_explicit_target = (
+        not extraction.has_reply_target(msg)
+        and bool(args)
+        and (args[0].lstrip("-").isdigit() or args[0].startswith("@"))
     )
     target_id, target_name = await extraction.extract_target(update, args, ctx.bot)
 

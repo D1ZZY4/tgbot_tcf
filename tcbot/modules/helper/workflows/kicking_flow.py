@@ -53,10 +53,9 @@ async def execute_kick(
     msg = update.effective_message
     effective_user = update.effective_user
     effective_chat = update.effective_chat
-    if effective_user is None or effective_chat is None:
-        log.warning("Kick executor called without effective_user or effective_chat")
+    if effective_user is None or effective_chat is None or msg is None:
+        log.warning("Kick executor called without user, chat, or message")
         return
-    assert msg is not None
     chat_id = effective_chat.id
     admin_id = effective_user.id
     admin_fname = effective_user.first_name
@@ -198,7 +197,9 @@ async def execute_kick(
 
 async def _exec_kick(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Pop kick data from user_data and call execute_kick."""
-    assert ctx.user_data is not None
+    if ctx.user_data is None:
+        log.warning("_exec_kick called without user_data")
+        return
     target_id = ctx.user_data.pop("kick_target_id", 0)
     target_name = ctx.user_data.pop("kick_target_name", "")
     reason_text = ctx.user_data.pop("kick_reason", replies.NO_REASON)

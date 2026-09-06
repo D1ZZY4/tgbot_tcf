@@ -56,6 +56,25 @@ async def _safe_get_chat(bot: Bot, ident: str | int) -> Chat | ChatFullInfo | No
 # ──────────────────────── Target resolution ─────────────────────── #
 
 
+def has_reply_target(msg: Message) -> bool:
+    """Return True when ``msg`` replies to a sender that resolves as a target.
+
+    Mirrors ``extract_target`` priority 1 (reply), including the
+    anonymous-admin skip: a GroupAnonymousBot reply carries the group
+    itself as ``sender_chat``, which must never count as a reply target.
+    Command entries use this to decide whether the first arg token names
+    the target or starts the reason text: with a reply target every arg
+    is reason text, so a leading numeric/@ token must not be consumed.
+    """
+    reply = msg.reply_to_message
+    if reply is None:
+        return False
+    from_user = reply.from_user
+    if from_user is not None:
+        return from_user.id not in (ANONYMOUS_BOT_ID, TELEGRAM_USER_ID)
+    return reply.sender_chat is not None
+
+
 async def _best_name(uid: int, *primary: str | None) -> str:
     """Pick the first non-empty/non-numeric primary name; fall back to cache, then str(uid).
 

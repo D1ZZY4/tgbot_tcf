@@ -63,7 +63,8 @@ async def log_mute(
 
 # ──────────────────────── Active mute store ─────────────────────── #
 # * One document per muted user in `active_mutes`.
-# * set_active_mute is called by _execute_mute after fan_out succeeds.
+# * set_active_mute is called by _execute_mute before the restrict fan-out
+# * (fail-closed: no group is touched when the record cannot persist).
 # * clear_active_mute is called by execute_unmute.
 # * get_active_mute / active_mute_docs filter out expired timed mutes at
 #   query time so no background cleanup job is needed.

@@ -40,6 +40,8 @@ log = logging.getLogger(__name__)
 reason = BuildReason("warn", skip_allowed=False)
 proof = BuildProof("warn")
 
+_ERR_DB_RETRY = "I couldn't reach the database right now. Please try again in a moment."
+
 
 # ──────────────────────────── Executors ─────────────────────────── #
 
@@ -103,7 +105,20 @@ async def execute_warn(
     proof_kb = keyboards.action_proof_kb(target_id, proof_link)
 
     warn_limit = cfg.warn_limit
-    count = await db.warns_db.add_warn(target_id, reason_text, admin_id, chat_id)
+    # * Fail closed with a retry reply: without the stored warn the
+    # * threshold check below is meaningless, and the conversation ends
+    # * silently otherwise (the caller clears state and returns END).
+    try:
+        count = await db.warns_db.add_warn(target_id, reason_text, admin_id, chat_id)
+    except Exception:
+        log.exception(
+            "add_warn DB write failed for target=%d chat=%d", target_id, chat_id
+        )
+        try:
+            await msg.reply_text(_ERR_DB_RETRY)
+        except Exception as exc:
+            log.debug("execute_warn DB-fail reply failed: %s", exc)
+        return
     log_text = parse_logmsg.warn_log(
         target_id,
         target_name,
@@ -135,7 +150,25 @@ async def execute_warn(
     else:
         fed_limit = cfg.fed_warn_limit
         if fed_limit > 0:
-            fed_count = await db.warns_db.federation_warn_count(target_id)
+            # * The warn above is already recorded; a failed aggregate read
+            # * must not end the conversation silently. Report the recorded
+            # * warn honestly and leave the federation-wide check to a retry.
+            try:
+                fed_count = await db.warns_db.federation_warn_count(target_id)
+            except Exception:
+                log.exception("federation_warn_count failed for target=%d", target_id)
+                try:
+                    await msg.reply_text(
+                        f"{user_ref(target_id, target_name)} has been warned "
+                        f"({count}/{warn_limit}) - {esc(reason_text)}. The "
+                        "federation-wide threshold check is unavailable right "
+                        "now; ban them manually with /tcban if needed.",
+                        parse_mode="HTML",
+                        reply_markup=proof_kb,
+                    )
+                except Exception as exc:
+                    log.debug("execute_warn fed-count-fail reply failed: %s", exc)
+                return
             if fed_count >= fed_limit:
                 auto_ban_trigger = "fed_global"
 
@@ -200,7 +233,18 @@ async def execute_unwarn(
         return
     chat_id = chat.id
 
-    count = await db.warns_db.warn_count(target_id, chat_id)
+    # * Fail closed with a retry reply instead of ending silently on outage.
+    try:
+        count = await db.warns_db.warn_count(target_id, chat_id)
+    except Exception:
+        log.exception(
+            "warn_count read failed for target=%d chat=%d", target_id, chat_id
+        )
+        try:
+            await msg.reply_text(_ERR_DB_RETRY)
+        except Exception as exc:
+            log.debug("execute_unwarn DB-fail reply failed: %s", exc)
+        return
     if count == 0:
         try:
             await msg.reply_text(
@@ -302,7 +346,16 @@ async def execute_warnlist(
         return
     chat_id = chat.id
 
-    warns = await db.warns_db.get_warns(target_id, chat_id)
+    # * Fail closed with a retry reply instead of ending silently on outage.
+    try:
+        warns = await db.warns_db.get_warns(target_id, chat_id)
+    except Exception:
+        log.exception("get_warns read failed for target=%d chat=%d", target_id, chat_id)
+        try:
+            await msg.reply_text(_ERR_DB_RETRY)
+        except Exception as exc:
+            log.debug("execute_warnlist DB-fail reply failed: %s", exc)
+        return
     count = len(warns)
 
     if count == 0:
@@ -352,7 +405,16 @@ async def execute_resetwarns(
     chat_title = chat.title or str(chat_id)
     lc, lt = cfg.logs
 
-    removed = await db.warns_db.clear_warns(target_id, chat_id)
+    removed = 0
+    try:
+        removed = await db.warns_db.clear_warns(target_id, chat_id)
+    except Exception:
+        log.exception("clear_warns failed for target=%d chat=%d", target_id, chat_id)
+        try:
+            await msg.reply_text(_ERR_DB_RETRY)
+        except Exception as exc:
+            log.debug("execute_resetwarns DB-fail reply failed: %s", exc)
+        return
     if removed == 0:
         try:
             await msg.reply_text(
@@ -631,7 +693,9 @@ async def _execute_warn_auto_ban(
 
 async def _exec_warn(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Pop warn data from user_data and call execute_warn."""
-    assert ctx.user_data is not None
+    if ctx.user_data is None:
+        log.warning("_exec_warn called without user_data")
+        return
     target_id = ctx.user_data.pop("warn_target_id", 0)
     target_name = ctx.user_data.pop("warn_target_name", "")
     reason_text = ctx.user_data.pop("warn_reason", "")
