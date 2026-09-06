@@ -36,6 +36,13 @@ from tcbot.modules.helper.decorators import global_rate_limit_handler
 from tcbot.utils import error_reporter
 from tcbot.utils.circuit_breaker import CircuitOpenError
 from tcbot.utils.logger import setup as setup_logging
+from tcbot.utils.transport import (
+    API_POOL_SIZE,
+    HTTP_CONNECT_TIMEOUT,
+    HTTP_POOL_TIMEOUT,
+    HTTP_READ_TIMEOUT,
+    HTTP_WRITE_TIMEOUT,
+)
 
 if TYPE_CHECKING:
     from collections.abc import Callable
@@ -43,17 +50,6 @@ if TYPE_CHECKING:
 log = logging.getLogger(__name__)
 
 # ─────────────────────── Application constants ──────────────────── #
-
-# * HTTP timeout values for the PTB ApplicationBuilder (seconds).
-# * Raised for Replit: first getMe() response can take >15s on this network.
-_HTTP_READ_TIMEOUT: int = 60
-_HTTP_WRITE_TIMEOUT: int = 30
-_HTTP_CONNECT_TIMEOUT: int = 30
-_HTTP_POOL_TIMEOUT: int = 15
-
-# * Connection pool size for the underlying httpx client (API calls).
-# * Not used for update fetching in webhook mode; still needed for send/edit/etc.
-_API_POOL_SIZE: int = 8
 
 # * Pool size for the dedicated getUpdates lane (polling mode only).
 _UPDATES_POOL_SIZE: int = 4
@@ -336,12 +332,12 @@ def _build_application(*, polling: bool) -> Application:
         # * Process independent updates in parallel (big latency win)
         .concurrent_updates(True)  # noqa: FBT003
         # * HTTP connection pool for outbound API calls (send, edit, delete, etc.)
-        .connection_pool_size(_API_POOL_SIZE)
+        .connection_pool_size(API_POOL_SIZE)
         # * HTTP timeouts - generous but bounded so hangs never block the loop
-        .read_timeout(_HTTP_READ_TIMEOUT)
-        .write_timeout(_HTTP_WRITE_TIMEOUT)
-        .connect_timeout(_HTTP_CONNECT_TIMEOUT)
-        .pool_timeout(_HTTP_POOL_TIMEOUT)
+        .read_timeout(HTTP_READ_TIMEOUT)
+        .write_timeout(HTTP_WRITE_TIMEOUT)
+        .connect_timeout(HTTP_CONNECT_TIMEOUT)
+        .pool_timeout(HTTP_POOL_TIMEOUT)
         # * Global Telegram API pacing: ~30 req/s with automatic 429/RetryAfter
         # * backoff.  Works alongside fan_out's semaphore (max 10 concurrent) and
         # * the per-user decorator rate limiter (group -1).

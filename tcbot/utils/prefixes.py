@@ -19,6 +19,12 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+# * Precompiled: _parse_prefixed_command runs on every incoming message, so
+# * the command/mention shapes must not recompile per call (re module cache
+# * would save us, but explicit is cheaper to reason about).
+_COMMAND_RE = re.compile(r"[a-z][a-z0-9]*")
+_MENTION_RE = re.compile(r"[A-Za-z0-9_]{5,32}")
+
 
 class _BotLike(Protocol):
     username: str | None
@@ -62,17 +68,17 @@ def _bot_username_from_message(message: Any) -> str | None:
 
 def _parse_prefixed_command(
     text: str,
-    prefixes: list[str],
+    prefixes: tuple[str, ...],
     bot_username: str | None,
 ) -> tuple[str, str | None] | None:
     """Parse a lowercase prefixed command and validate any bot mention suffix."""
     if not prefixes:
         return None
 
-    prefix = next(
-        (p for p in sorted(set(prefixes), key=len, reverse=True) if text.startswith(p)),
-        None,
-    )
+    # * Longest prefix first so "..cmd" prefers ".." over "."; callers pass
+    # * the pre-sorted tuple prepared at filter construction (front-loads
+    # * the sort out of this per-message hot path).
+    prefix = next((p for p in prefixes if text.startswith(p)), None)
     if prefix is None:
         return None
 
@@ -86,10 +92,10 @@ def _parse_prefixed_command(
     command, separator, mention = token.partition("@")
     if not command or command != command.lower() or not command.isascii():
         return None
-    if not re.fullmatch(r"[a-z][a-z0-9]*", command):
+    if not _COMMAND_RE.fullmatch(command):
         return None
     if separator:
-        if not mention or not re.fullmatch(r"[A-Za-z0-9_]{5,32}", mention):
+        if not mention or not _MENTION_RE.fullmatch(mention):
             return None
         if bot_username is None or mention.casefold() != bot_username.casefold():
             return None
@@ -103,7 +109,7 @@ class _PrefixedCommandFilter(filters.MessageFilter):
     def __init__(self, command: str, prefixes: list[str]) -> None:
         super().__init__(name=f"PrefixedCommand({command})")
         self.command = command
-        self.prefixes = prefixes
+        self.prefixes = tuple(sorted(set(prefixes), key=len, reverse=True))
 
     def filter(self, message: Message) -> bool:
         """Return True when the message matches this filter's specific command."""
@@ -121,7 +127,7 @@ class _AnyPrefixedCommandFilter(filters.MessageFilter):
 
     def __init__(self, prefixes: list[str], *, name: str) -> None:
         super().__init__(name=name)
-        self.prefixes = prefixes
+        self.prefixes = tuple(sorted(set(prefixes), key=len, reverse=True))
 
     def filter(self, message: Message) -> bool:
         """Return True when the message is any valid prefixed command."""

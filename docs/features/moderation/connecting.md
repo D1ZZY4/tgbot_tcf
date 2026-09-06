@@ -58,7 +58,7 @@ There is no `/tcconnect` alias for the auto-prompt path; the prompt uses inline 
    - `bot.get_chat_member(chat.id, bot.id)` for the bot itself, again bounded with `asyncio.wait_for(timeout=3.0)`.
 3. If the executor's `get_chat_member` raised, replies `replies.ERR_ROLE_VERIFY` and stops.
 4. If the executor is not `administrator` or `creator`, replies `Only group admins can request to connect.` and stops.
-5. Rejects primary groups (`cfg.main_group`, `cfg.exec_group`) via `_is_primary_group`: they are required enforcement destinations, not connectable members (the bot-added path refuses them the same way before any prompt or pending row).
+5. Rejects primary groups (`cfg.main_group`, `cfg.exec_group`) via `cfg.is_primary_group`: they are required enforcement destinations, not connectable members (the bot-added path refuses them the same way before any prompt or pending row).
 6. If `is_connected` is true, replies `connection.already_connected_message()` and stops.
 7. If `pending` is set, replies `A connect request for this group is already pending.` and stops.
 8. If the bot's `get_chat_member` raised, replies `replies.ERR_ROLE_VERIFY` and stops.

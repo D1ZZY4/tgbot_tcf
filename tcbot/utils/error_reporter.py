@@ -8,7 +8,6 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
-import html
 import logging
 import platform
 import re
@@ -18,7 +17,7 @@ from typing import TYPE_CHECKING
 
 import telegram.error as _te
 
-from tcbot.utils.formatter import bold, code, pre
+from tcbot.utils.formatter import bold, code, esc, pre
 from tcbot.utils.time_and_date import monotonic, utc_now
 
 if TYPE_CHECKING:
@@ -310,6 +309,7 @@ def _classify(exc: BaseException | None) -> str:
 # ─────────────────────── Message Formatting ─────────────────────── #
 # * Telegram hard-caps a message at 4096 chars (incl. HTML). Budget below
 # * keeps the rendered output safely under that limit even with HTML tags.
+# * HTML escaping uses esc() from tcbot.utils.formatter (single source).
 
 _MAX_TB = 2200
 _MAX_MSG = 250
@@ -317,13 +317,6 @@ _MAX_CTX = 250
 _TB_FRAMES = 8
 _MAX_LINE_CONTENT: int = 100
 _REPORT_SEP_LEN: int = 30
-
-
-def _esc(s: str | None) -> str:
-    """Escape HTML special characters for Telegram HTML parse mode."""
-    if s is None:
-        return ""
-    return html.escape(str(s))
 
 
 def _shorten_path(path: str) -> str:
@@ -444,10 +437,10 @@ def build_error_message(
         f"{bold('Error Report')}\n"
         f"{sep}\n"
         f"{bold('Type:')} {label}\n"
-        f"{bold('Action:')} {_esc(action)}\n"
+        f"{bold('Action:')} {esc(action)}\n"
         f"{bold('Where:')} {code(f'{file_part}:{line_no}')} in {code(func_name)}\n"
         f"{bold('When:')} {time_str} - {date_str}\n"
-        f"{bold('Host:')} Python {py_ver} @ {_esc(host)}\n"
+        f"{bold('Host:')} Python {py_ver} @ {esc(host)}\n"
         f"{sep}\n"
         f"{bold('Message:')}\n{code(raw_msg[:_MAX_MSG])}"
         f"{tb_block}"

@@ -13,7 +13,7 @@ from telegram import InlineKeyboardButton
 from tcbot.utils.time_and_date import fmt_dt
 
 
-def paginate(items: list, page: int, page_size: int) -> tuple[list, int, int]:
+def paginate[T](items: list[T], page: int, page_size: int) -> tuple[list[T], int, int]:
     """Slice ``items`` for ``page`` (0-based). Returns ``(chunk, total_pages, clamped_page)``."""
     total = len(items)
     if total == 0 or page_size <= 0:

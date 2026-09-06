@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import asyncio
+from typing import TYPE_CHECKING
 
 from tcbot import cfg
 from tcbot import database as db
@@ -15,14 +16,19 @@ from tcbot.modules.helper.formatter import bold, code, esc, mention
 from tcbot.modules.helper.parse_link import message_link
 from tcbot.utils.time_and_date import fmt_dt
 
+if TYPE_CHECKING:
+    from tcbot.database.documents import BanDoc
+
 # ─────────────────────── Ban detail builder ─────────────────────── #
 
 
 async def build_ban_detail(
-    ban: dict, target_fname: str | None = None
+    ban: BanDoc, target_fname: str | None = None
 ) -> tuple[str, str | None]:
     """Return (formatted text, proof_link or None) for a ban document."""
-    uid = ban["banned_user_id"]
+    # * BanDoc is total=False: every key access below uses .get() with a
+    # * display-safe fallback so a sparse record renders instead of raising.
+    uid = ban.get("banned_user_id", 0)
     aid = ban.get("admin_user_id", 0)
 
     if target_fname is None:
@@ -46,10 +52,9 @@ async def build_ban_detail(
         target_uname = None
 
     proof_chat, proof_thread = cfg.proofs
+    proof_msg_id = ban.get("proof_message_id")
     proof_link = (
-        message_link(proof_chat, ban["proof_message_id"], proof_thread)
-        if ban.get("proof_message_id")
-        else None
+        message_link(proof_chat, proof_msg_id, proof_thread) if proof_msg_id else None
     )
 
     ts = ban.get("timestamp")
@@ -62,7 +67,7 @@ async def build_ban_detail(
         f"Banned by: {mention(aid, admin_fname, admin_uname)}\n"
         f"Admin ID: {code(str(aid))}\n\n"
         f"Reason: {esc(ban.get('reason', replies.NO_REASON))}\n"
-        f"Ban ID: {code(ban['ban_id'])}\n"
+        f"Ban ID: {code(ban.get('ban_id', ''))}\n"
         f"Date: {date_str}"
     )
     return text, proof_link

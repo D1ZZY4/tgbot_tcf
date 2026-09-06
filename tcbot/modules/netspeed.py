@@ -208,6 +208,19 @@ async def cmd_speedtest(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             log.debug("cmd_speedtest failure-edit failed: %s", edit_exc)
         return
 
+    async def _parse_failed() -> None:
+        # * KeyError (shape drift) and TypeError (None where a mapping was
+        # * expected) both mean the result cannot be rendered honestly;
+        # * shared responder so the two except clauses stay identical
+        # * without a forbidden tuple-except.
+        log.exception("Speedtest result parsing failed")
+        try:
+            await notice.edit_text(
+                "Speed test completed but result parsing failed. Check bot logs."
+            )
+        except Exception as edit_exc:
+            log.debug("cmd_speedtest parse-fail edit failed: %s", edit_exc)
+
     try:
         dl = _readable_size(result["download"] / 8)
         ul = _readable_size(result["upload"] / 8)
@@ -240,22 +253,10 @@ async def cmd_speedtest(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
             f"{bold('Longitude:')} {code(str(server['lon']))}"
         )
     except KeyError:
-        log.exception("Speedtest result parsing failed")
-        try:
-            await notice.edit_text(
-                "Speed test completed but result parsing failed. Check bot logs."
-            )
-        except Exception as edit_exc:
-            log.debug("cmd_speedtest parse-fail edit failed: %s", edit_exc)
+        await _parse_failed()
         return
     except TypeError:
-        log.exception("Speedtest result parsing failed")
-        try:
-            await notice.edit_text(
-                "Speed test completed but result parsing failed. Check bot logs."
-            )
-        except Exception as edit_exc:
-            log.debug("cmd_speedtest parse-fail edit failed: %s", edit_exc)
+        await _parse_failed()
         return
     share_url: str | None = result.get("share")
     if share_url and not share_url.startswith("https://"):

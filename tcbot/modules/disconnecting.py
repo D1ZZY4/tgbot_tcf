@@ -17,7 +17,6 @@ from tcbot import database as db
 from tcbot.modules.helper import decorators, parse_logmsg, replies
 from tcbot.modules.helper.formatter import bold, code, esc
 from tcbot.modules.helper.identity import ANONYMOUS_BOT_ID
-from tcbot.modules.maintenance import _is_primary_group
 from tcbot.utils.prefixes import build_prefixed_filters, parse_cmd_args
 from tcbot.utils.time_and_date import TELEGRAM_LOOKUP_TIMEOUT
 
@@ -115,7 +114,7 @@ async def cmd_tcdisconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
     # * unban / mute / warn fan-out and the federation log channel. They
     # * must never be disconnected by the group owner; the bot would
     # * lose primary-group enforcement and log delivery.
-    if _is_primary_group(chat.id):
+    if cfg.is_primary_group(chat.id):
         try:
             await msg.reply_text(_MSG_PRIMARY_REFUSED)
         except Exception as exc:
@@ -245,7 +244,7 @@ async def cmd_rmtc(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     # * unban / mute / warn fan-out and the federation log channel. They
     # * must never be force-disconnected by /rmtc; the bot would lose
     # * primary-group enforcement and log delivery.
-    if _is_primary_group(chat_id):
+    if cfg.is_primary_group(chat_id):
         try:
             await msg.reply_text(_MSG_PRIMARY_REFUSED)
         except Exception as exc:

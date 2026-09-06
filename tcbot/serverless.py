@@ -9,7 +9,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from telegram import LinkPreviewOptions, Update
 from telegram.ext import (
@@ -32,13 +32,24 @@ from tcbot.database import redis_client
 from tcbot.database.mongos import connect, ensure_indexes, is_connected
 from tcbot.database.scheduler import expire_old_warns
 from tcbot.utils import error_reporter
+from tcbot.utils.transport import (
+    API_POOL_SIZE,
+    HTTP_CONNECT_TIMEOUT,
+    HTTP_POOL_TIMEOUT,
+    HTTP_READ_TIMEOUT,
+    HTTP_WRITE_TIMEOUT,
+)
+
+if TYPE_CHECKING:
+    from collections.abc import Coroutine
 
 log = logging.getLogger(__name__)
 
 # ────────────────── Transport tuning (mirrors __main__) ────────────────── #
 # * Same outbound HTTP tuning as the long-lived transports so Telegram API
-# * behaviour (pooling, timeouts, pacing) is identical on Vercel.  Values are
-# * duplicated rather than imported because __main__ keeps them private.
+# * behaviour (pooling, timeouts, pacing) is identical on Vercel. Values
+# * live in tcbot.utils.transport (single owner); only the link-preview
+# * default stays local because __main__ keeps that constant private.
 
 _HTTP_READ_TIMEOUT: float = 60
 _HTTP_WRITE_TIMEOUT: float = 30
@@ -71,7 +82,7 @@ def _instance_loop() -> asyncio.AbstractEventLoop:
         return _LOOP
 
 
-def run(coro: Any) -> Any:
+def run[T](coro: Coroutine[Any, Any, T]) -> T:
     """Drive ``coro`` on the instance loop, serialised against concurrent invocations."""
     loop = _instance_loop()
     with _LOOP_LOCK:
@@ -95,11 +106,11 @@ def build_serverless_app() -> Application:
         .updater(None)
         .defaults(Defaults(link_preview_options=_LINK_PREVIEW_DISABLED))
         .concurrent_updates(True)  # noqa: FBT003
-        .connection_pool_size(_API_POOL_SIZE)
-        .read_timeout(_HTTP_READ_TIMEOUT)
-        .write_timeout(_HTTP_WRITE_TIMEOUT)
-        .connect_timeout(_HTTP_CONNECT_TIMEOUT)
-        .pool_timeout(_HTTP_POOL_TIMEOUT)
+        .connection_pool_size(API_POOL_SIZE)
+        .read_timeout(HTTP_READ_TIMEOUT)
+        .write_timeout(HTTP_WRITE_TIMEOUT)
+        .connect_timeout(HTTP_CONNECT_TIMEOUT)
+        .pool_timeout(HTTP_POOL_TIMEOUT)
         .rate_limiter(AIORateLimiter())
         .build()
     )

@@ -22,7 +22,6 @@ from tcbot import database as db
 from tcbot.modules.helper import decorators, replies
 from tcbot.modules.helper.formatter import bold, code, esc
 from tcbot.modules.helper.workflows.connected_flow import connection
-from tcbot.modules.maintenance import _is_primary_group
 from tcbot.utils.prefixes import build_prefixed_filters
 from tcbot.utils.time_and_date import TELEGRAM_LOOKUP_TIMEOUT
 
@@ -150,7 +149,7 @@ async def cmd_tcconnect(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     # * Primary groups are required enforcement destinations, not federation
     # * members; connecting them would pollute federated_groups with an ID
     # * that fan-out paths unconditionally include.
-    if _is_primary_group(chat.id):
+    if cfg.is_primary_group(chat.id):
         try:
             await msg.reply_text(
                 "This is a primary group of the federation (main or exec). "
