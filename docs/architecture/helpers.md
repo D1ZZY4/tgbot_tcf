@@ -119,7 +119,7 @@ The `Identity` dataclass now includes:
 - `username`: Optional username display metadata (mention rendering always uses the numeric ID `tg://user` link; usernames are ignored by `user_ref`)
 - `is_bot`: Boolean flag
 
-The companion helpers `identity.refuse_message(action, ident)` and `identity.staff_notice(action, ident, community_name)` produce the witty refusal lines and staff heads-up notices used by every moderation entry handler.
+The companion helpers `identity.refuse_message(action, ident)` and `identity.staff_notice(action, ident, community_name)` produce the witty refusal lines and staff heads-up notices. `refuse_message` gates every moderation entry handler; `staff_notice` is used by the warn/unwarn/resetwarns/unmute paths, where the action proceeds on staff targets with a heads-up instead of refusing or auto-demoting.
 
 Every moderation command (ban, kick, mute, warn, unban, unmute, promote, demote) must call `identity.classify` once and route through `refuse_message` instead of inlining `target_id == ctx.bot.id` / `user.id == owner_id` / role-string branches. Refusal copy lives in `identity.py` so the bot's voice stays consistent across the whole project.
 

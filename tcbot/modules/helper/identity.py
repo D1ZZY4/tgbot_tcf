@@ -300,9 +300,9 @@ def refuse_message(action: str, ident: Identity) -> str | None:
 
 
 # ─────────────── Staff heads-up (action proceeds) ───────────────── #
-# * For unwarn / unmute / resetwarns on staff targets, the action proceeds
-# * but we surface a short heads-up so the executor knows the target is
-# * staff; useful when an Admin is cleaning up a stale record.
+# * For warn / unwarn / unmute / resetwarns on staff targets, the action
+# * proceeds but we surface a short heads-up so the executor knows the
+# * target is staff; useful when an Admin is cleaning up a stale record.
 
 
 def staff_notice(action: str, ident: Identity, community_name: str) -> str | None:

@@ -94,18 +94,16 @@ write.
 | `bans` | `(banned_user_id, is_active, timestamp desc, ban_id desc)` compound (serves get_active_ban filter+sort), unique `(ban_id)`, `(banned_user_id, appeal_log_msg_id)` sparse, `(is_active, timestamp desc, ban_id desc)` (serves active_bans / active_ban_count), `(banned_user_id, timestamp desc, ban_id desc)` (serves /check ban history) |
 | `tc_owners` | unique `(user_id)` |
 | `tc_admins` | unique `(user_id)` |
-| `tc_roles` | unique `(user_id)` |
-| `federated_groups` | `(chat_id, is_active)` |
-| `federated_groups` | unique `(chat_id)` |
-| `member_cache` | unique `(user_id)` |
-| `member_cache` | `(user_id, first_name, username)` (covered-query index for batch `$in` projections) |
-| `warns` | `(user_id, chat_id, timestamp desc)` |
-| `warn_counts` | unique `(user_id, chat_id)` |
-| `kicks` | `(user_id, timestamp desc)` |
-| `mutes` | `(user_id, timestamp desc)` |
-| `promotion_requests` | unique `(request_id)` |
-| `promotion_requests` | `(target_id, status)` |
-| `promotion_requests` | `(status, requested_date)` (serves `all_pending` filter plus oldest-first sort) |
+| `tc_roles` | unique `(user_id)`, `(role)` (serves `all_by_role` filter) |
+| `federated_groups` | `(chat_id, is_active)`, unique `(chat_id)`, `(is_active)` |
+| `pending_joins` | unique `(chat_id)` (one pending request per chat) |
+| `member_cache` | unique `(user_id)`, `(user_id, first_name, username)` covered-query index for batch `$in` projections, `(username)`, `(first_name)`, `(last_updated)` TTL auto-expiry |
+| `warns` | `(user_id, chat_id, timestamp desc)`, `(user_id, timestamp desc)` (per-user history), `(user_id, chat_id, timestamp asc)` (oldest-first `get_warns` sort), `(timestamp)` (warn expiry sweep) |
+| `warn_counts` | unique `(user_id, chat_id)`, `(updated_at)` (counter expiry sweep), `(user_id, count, updated_at desc)` (`user_warn_groups` / `federation_warn_count`) |
+| `kicks` | `(user_id, timestamp desc)`, `(chat_id)` |
+| `mutes` | `(user_id, timestamp desc)`, `(chat_id)` |
+| `active_mutes` | unique `(user_id)`, `(until_date)` (expiry-filtered fetch), `(user_id, until_date)` |
+| `promotion_requests` | unique `(request_id)`, `(target_id, status)`, unique `(target_id)` partial on `status == "pending"` (one pending request per user), `(status, requested_date)` (serves `all_pending` filter plus oldest-first sort) |
 
 If a new query depends on a new access pattern, add the matching index in `ensure_indexes()` together with the helper change.
 

@@ -52,7 +52,7 @@ __help_sections__: list[tuple[str, str]] = [
         "is posted to the federation logs channel.\n\n"
         "If the user has no active federation ban, the bot will let you know and take no "
         "action.\n"
-        "If the target's ban was under appeal, the appeal is also resolved as approved.",
+        "A pending appeal review card is left untouched; resolving appeals stays on the appeal flow.",
     ),
     replies.target_section(),
     (

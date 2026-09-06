@@ -108,8 +108,8 @@ async def cmd_mute(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
 
     Resolves the target, parses an optional duration token from the inline
     arguments, runs identity and role checks in parallel, auto-demotes any
-    federation role, then either executes an immediate mute (when a duration and
-    inline reason are both provided) or opens the reason/proof conversation.
+    federation role, then opens the reason/proof conversation (an inline
+    reason skips the reason prompt and goes straight to proof collection).
     Returns ``ConversationHandler.END`` on validation failure.
     """
     msg = update.effective_message

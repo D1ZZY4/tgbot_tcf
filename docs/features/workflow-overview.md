@@ -87,7 +87,7 @@ Clarification: explanation of the situation
 Agreement: commitment to follow community rules
 ```
 
-The original banning admin has a 12-hour priority review window. During that window, only the banning admin and the Founder can review. After the window, any admin-level reviewer can act.
+The original banning admin has a 12-hour priority review window. During that window, only the banning admin (`admin_user_id` on the ban) can review. After the window, any staff reviewer accepted by `is_staff` (Founder or Admin) can act.
 
 ## Group connection flow
 

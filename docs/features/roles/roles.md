@@ -161,8 +161,7 @@ When Founder promotes a target to Admin:
 
 When Founder or Admin assigns Developer/Tester:
 
-1. Existing Developer/Tester custom role is removed first if present.
-2. `users_roles.set_role(target_id, role, assigned_by)` upserts into `tc_roles`.
+1. `users_roles.set_role(target_id, role, assigned_by)` atomically upserts into `tc_roles` (no prior remove; the upsert replaces any existing Developer/Tester entry without a delete-then-insert window).
 3. `users_cache.upsert_user(...)` caches the display name.
 4. A `promoted` log (with the assigned role) is sent to `cfg.logs`.
 5. The target is notified by DM when possible.
@@ -317,7 +316,7 @@ Behavior:
 
 Ban, kick, and mute command modules block equal/higher-ranked targets before calling auto-demotion, so auto-demotion only applies to lower-ranked staff targets.
 
-A single warning below the warn limit does not auto-demote. However, when the warn limit is reached, `warning_flow.execute_warn` calls `Demote.execute(trigger="ban")` before issuing the federation-wide auto-ban, so a role-holding target loses their role at that point. Individual warnings below the threshold leave the role intact.
+A single warning below the warn limit does not auto-demote. However, when the warn limit is reached, `warning_flow` calls `Demote.execute(trigger="ban")` and then exempts the staff target from the auto-ban (staff are never auto-banned via warnings); the threshold warn itself is still recorded. Individual warnings below the threshold leave the role intact.
 
 ## Logs
 

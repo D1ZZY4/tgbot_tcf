@@ -149,7 +149,7 @@ Kick audit records are stored in the `kicks` collection. Each record contains:
 
 Indexes are ensured for:
 
-- `kicks`: `(user_id, timestamp -1)` for `user_kicks` history list.
+- `kicks`: `(user_id, timestamp -1)` for `user_kicks` history list, `(chat_id)` for per-group kick queries.
 
 ## Logs and keyboards
 
@@ -171,7 +171,7 @@ The reply and federation log use `keyboards.action_proof_kb(target_id, proof_lin
 - If the post-ban `unban_chat_member` fails, the user is effectively banned in this chat. The reply now appends a `WARNING:` line explaining this and recommending a manual chat-member unban (previously the failure was a silent false success).
 - Auto-demote failure aborts the kick before the reason prompt; previously the failure was swallowed and the kick proceeded anyway.
 - The reason and proof conversation is per-chat and per-user, so simultaneous kick flows are isolated.
-- The kick command is **group-only**; it cannot be used in private chats because `basic_mod_only` requires a rank check that resolves through the connected-group context.
+- The kick command is **group-only**: `execute_kick` acts on the current chat (`ban_chat_member` then `unban_chat_member` in `effective_chat.id`), so it is only meaningful in a group. Rank gating is Tester or above via `basic_mod_only`; the decorator itself performs no group-membership check.
 - The `/tckick` executor is not gated on `mod_only`; any Tester or higher can issue it.
 
 ## Behavior reference

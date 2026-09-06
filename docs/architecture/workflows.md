@@ -107,7 +107,7 @@ flowchart TD
 |---|---|
 | Factory | `kick_conversation(entry_fn, entry_filter)` |
 | Module instances | `reason = BuildReason("kick")`, `proof = BuildProof("kick")` |
-| Executor | `execute_kick(update, ctx, target_id, target_name, reason_text, proof_desc=None, proof_msgs=None)` |
+| Executor | `execute_kick(update, ctx, target_id, target_name, reason_text, proof_msgs=None)` |
 
 Kick is current-group-only. It bans the user from the current chat and immediately unbans them so the action behaves as a kick rather than a permanent group ban. If `proof_msgs` is provided, proof media is uploaded to the proof channel and the resulting link is shown as an inline keyboard button on the reply and log messages.
 
@@ -166,7 +166,7 @@ flowchart TD
 | Factory | `warn_conversation(entry_fn, entry_filter, escape_filter=None)` |
 | Module instances | `reason = BuildReason("warn", skip_allowed=False)`, `proof = BuildProof("warn")` |
 | Limit | `cfg.warn_limit` (env var `WARN_LIMIT`, default 3, minimum 1) |
-| Executors | `execute_warn(update, ctx, target_id, target_name, reason_text, warn_n, proof_desc=None, proof_msgs=None)`, `execute_unwarn`, `execute_warnlist`, `execute_resetwarns` |
+| Executors | `execute_warn(update, ctx, target_id, target_name, reason_text, proof_desc=None, proof_msgs=None)`, `execute_unwarn`, `execute_warnlist`, `execute_resetwarns` |
 
 Warns are tracked per `(user_id, chat_id)`. At `cfg.warn_limit` (per-group) or `cfg.fed_warn_limit` (federation-wide), the flow issues a **federation-wide ban** via `fan_out()` to all active connected groups plus primary groups, creates a ban document in the `bans` collection, and then clears warnings for that user/chat. If `proof_msgs` is provided, proof media is uploaded to the proof channel and the resulting link is attached as an inline keyboard button to all outgoing messages (auto-ban log, replies, non-auto-ban log).
 
@@ -229,7 +229,7 @@ Demotion is not a conversation. `Demote.execute(...)` in `workflows/demote_flow.
 
 | Call | Trigger | Path |
 |---|---|---|
-| `Demote.execute(...)` | `None` | Manual `/tcdemote`: sends a confirmation prompt with `Confirm` / `Cancel` buttons, then removes the role and logs it. |
+| `Demote.execute(...)` | `None` | Manual `/tcdemote`: `admins.py` sends a Confirm/Cancel prompt first; the confirm callback calls `Demote.execute(trigger=None)`, which removes the role, posts the federation log, and DMs the target. |
 | `Demote.execute(..., trigger="ban")` | `"ban"` | Auto-demote before a federation ban: silently removes the role and notes the trigger in the log. |
 | `Demote.execute(..., trigger="kick")` | `"kick"` | Auto-demote before a current-group kick: same silent path as `"ban"`. |
 | `Demote.execute(..., trigger="mute")` | `"mute"` | Auto-demote before a federation-wide mute: same silent path as `"ban"` and `"kick"`. |

@@ -48,8 +48,8 @@ _RL_READ_LIMIT: int = 8
 __module_name__ = "Warnings"
 __help_text__ = (
     "Per-group warning tracking. At "
-    f"{bold(f'{cfg.warn_limit} warnings')} the user is automatically banned from the group "
-    "and their record cleared."
+    f"{bold(f'{cfg.warn_limit} warnings')} the user is automatically federation-banned "
+    "across all connected groups and their warnings are cleared."
 )
 
 __help_sections__: list[tuple[str, str]] = [
@@ -69,7 +69,7 @@ __help_sections__: list[tuple[str, str]] = [
         replies.SEC_WHAT,
         f"{bold('/tcwarn')}: issues a formal warning. Warnings are tracked {bold('per-group')} and "
         f"do not carry across connected groups. At {bold(f'{cfg.warn_limit} warnings')}, the user is "
-        f"automatically banned from the group and their warning record is cleared.\n\n"
+        f"automatically federation-banned across all connected groups and their warnings are cleared.\n\n"
         f"{bold('/tcunwarn')}: removes the user's most recent warning in the current group.\n\n"
         f"{bold('/warns')}: shows the current warning count and full list of reasons.\n\n"
         f"{bold('/resetwarns')}: clears all warnings for a user in the current group at once, "
