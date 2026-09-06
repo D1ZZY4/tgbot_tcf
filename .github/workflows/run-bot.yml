@@ -119,7 +119,10 @@ jobs:
             # Watchdog: restart the bot if the process has exited.
             if ! kill -0 "$BOT_PID" 2>/dev/null; then
               echo "::warning::Bot process $BOT_PID died. Restarting."
-              tail -n 40 bot.log || true
+              # * Scrub credential-shaped strings before printing: workflow
+              # * logs on a public repository are world-readable (same
+              # * patterns as error_reporter.py redaction).
+              tail -n 40 bot.log 2>/dev/null | sed -E -e 's/[0-9]{6,}:[A-Za-z0-9_-]{20,}/[REDACTED_TOKEN]/g' -e 's#://[^:@/ \t]*:[^@/ \t]*@#://[REDACTED]@#g' || true
               restarts=$((restarts + 1))
               [ "$first_death" = "0" ] && first_death=$now
               # * Fail-fast config (bad token/URI) would otherwise restart
@@ -168,12 +171,23 @@ jobs:
           wait "$BOT_PID" 2>/dev/null || true
           echo "Bot stopped."
 
+      - name: Scrub log of credentials
+        if: always()
+        run: |
+          # * bot.log ships as a public artifact below; strip credential-shaped
+          # * strings first (token id:hash, URI user:pass@ incl. password-only,
+          # * same patterns as error_reporter.py). Message excerpts remain by
+          # * design for crash debugging; see docs/operations/ci-cd.md.
+          if [[ -f bot.log ]]; then
+            sed -E -e 's/[0-9]{6,}:[A-Za-z0-9_-]{20,}/[REDACTED_TOKEN]/g' -e 's#://[^:@/ \t]*:[^@/ \t]*@#://[REDACTED]@#g' bot.log > bot-scrubbed.log
+          fi
+
       - name: Detect crash in log
         if: always()
         run: |
-          if [[ -f bot.log ]] && grep -qiE "(Traceback|^\w+Error:|CRITICAL)" bot.log; then
+          if [[ -f bot-scrubbed.log ]] && grep -qiE "(Traceback|^\w+Error:|CRITICAL)" bot-scrubbed.log; then
             echo "::warning::Crash signature found in bot.log (last 120 lines saved)."
-            grep -n "" bot.log | tail -120 > crash_tail.log
+            grep -n "" bot-scrubbed.log | tail -120 > crash_tail.log
           fi
 
       - name: Upload bot log
@@ -182,7 +196,7 @@ jobs:
         with:
           name: bot-log-${{ github.run_id }}
           path: |
-            bot.log
+            bot-scrubbed.log
             crash_tail.log
           retention-days: 7
           if-no-files-found: ignore
