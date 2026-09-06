@@ -33,7 +33,7 @@ from telegram.ext import (
 from tcbot import cfg
 from tcbot import database as db
 from tcbot.database.documents import BanDoc
-from tcbot.modules.helper import parse_logmsg
+from tcbot.modules.helper import parse_logmsg, replies
 from tcbot.modules.helper.formatter import bold, code, esc, mention, pre
 from tcbot.modules.helper.parse_link import message_link
 from tcbot.utils.dispatch import count_transient_errors, fan_out
@@ -842,13 +842,31 @@ class BuildAppeal:
         lc: int,
         lt: int | None,
     ) -> None:
+        # * Fetch groups BEFORE deactivating, mirroring execute_unban: a
+        # * groups-fetch failure with an already-deactivated record leaves
+        # * chats unbanned-nowhere with no re-drive path (the record is
+        # * gone, so a re-tap finds no active ban). Abort with the review
+        # * card untouched so the decision stays actionable, alert the
+        # * tapper, and let the error log ship to LOG_ERRORS.
+        try:
+            groups = await db.groups_db.active_groups()
+        except Exception:
+            log.exception(
+                "approve_appeal: groups fetch failed for user=%d; "
+                "aborting before deactivation",
+                target_id,
+            )
+            try:
+                await q.answer(replies.ERR_GROUPS_LOAD_FAILED, show_alert=True)
+            except Exception as exc:
+                log.debug("approve_appeal groups-fail answer failed: %s", exc)
+            return
         # * Deactivate ALL active bans for the user (not only the appeal ban_id)
-        # * in parallel with fetching active groups, target name, and cancelling
-        # * any pending timed-unban APScheduler job (future-proofing: no-op when
+        # * in parallel with fetching the target name and cancelling any
+        # * pending timed-unban APScheduler job (future-proofing: no-op when
         # * no timed ban exists, same pattern as execute_unban in unban_flow.py).
-        deactivate_result, groups, target_fname, _ = await asyncio.gather(
+        deactivate_result, target_fname, _ = await asyncio.gather(
             db.bans_db.deactivate_all_active_bans(target_id),
-            db.groups_db.active_groups(),
             db.users_cache.get_first_name(target_id, str(target_id)),
             db.scheduler.cancel_schedule(f"unban.{ban_id}"),
             return_exceptions=True,
@@ -880,13 +898,6 @@ class BuildAppeal:
             except Exception as exc:
                 log.debug("approve_appeal DB-fail reply failed: %s", exc)
             return
-        if isinstance(groups, BaseException):
-            log.error(
-                "active_groups failed during appeal unban of %d: %s",
-                target_id,
-                groups,
-            )
-            groups = []
         if isinstance(target_fname, BaseException):
             target_fname = str(target_id)
 

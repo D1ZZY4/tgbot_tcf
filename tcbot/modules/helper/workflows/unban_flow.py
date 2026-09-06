@@ -37,10 +37,11 @@ async def execute_unban(
 ) -> None:
     """Lift a federation ban: deactivate the DB record and unban across all connected groups.
 
-    Fetches the active ban (unless ``pre_ban`` is supplied), runs ``deactivate_ban``
-    and ``active_groups`` in parallel, fans out ``unban_chat_member`` across every
-    group, then sends the log and reply concurrently. Replies inline if no active ban
-    is found.
+    Fetches the active ban (unless ``pre_ban`` is supplied), loads the group
+    list first (abort with the record intact when it cannot be loaded, so a
+    retry re-drives the full fan-out), then deactivates and unbans across all
+    connected groups, sends the log and replies concurrently. Replies inline
+    if no active ban is found.
 
     When ``pre_ban`` is provided by the caller the function skips the ``get_active_ban``
     DB round-trip entirely, saving one network hop on the hot path. Pass ``None`` (the
@@ -71,13 +72,35 @@ async def execute_unban(
 
     ban_id = ban.get("ban_id", "")
 
+    # * Fetch groups BEFORE deactivating: if the list cannot be loaded we
+    # * must abort with the ban record intact so a retry re-drives the full
+    # * fan-out. Deactivating first and then discovering an empty list
+    # * leaves chats unbanned-nowhere with no record to retry from (the
+    # * next /tcunban would report "no active ban" while chats still ban
+    # * the user). Mirrors _execute_mute's groups-first fail-closed order.
+    # * Costs one sequential read, but active_groups is L1-cached (30 s).
+    try:
+        groups = await db.groups_db.active_groups()
+    except Exception:
+        log.exception("active_groups failed during unban of %d", target_id)
+        if msg is not None:
+            try:
+                await msg.reply_text(
+                    f"{user_ref(target_id, target_fname)} could not be unbanned: "
+                    "the group list could not be loaded from the database, so "
+                    "nothing was changed. Check the logs and retry.",
+                    parse_mode="HTML",
+                )
+            except Exception as exc:
+                log.debug("Unban groups-fail reply failed: %s", exc)
+        return
+
     # * Deactivate ALL active bans for this user (not only the one found by
-    # * get_active_ban), fetch active groups, and cancel any pending APScheduler
-    # * unban job in parallel. The cancel call is a no-op when no timed-ban
-    # * schedule exists; it future-proofs the flow for when timed bans are added.
-    deactivate_r, groups, _ = await asyncio.gather(
+    # * get_active_ban) and cancel any pending APScheduler unban job in
+    # * parallel. The cancel call is a no-op when no timed-ban schedule
+    # * exists; it future-proofs the flow for when timed bans are added.
+    deactivate_r, _ = await asyncio.gather(
         db.bans_db.deactivate_all_active_bans(target_id),
-        db.groups_db.active_groups(),
         db.scheduler.cancel_schedule(f"unban.{ban_id}"),
         return_exceptions=True,
     )
@@ -107,9 +130,6 @@ async def execute_unban(
             except Exception as exc:
                 log.debug("Unban DB-fail reply failed: %s", exc)
         return
-    if isinstance(groups, BaseException):
-        log.error("active_groups failed during unban of %d: %s", target_id, groups)
-        groups = []
 
     # * Include primary groups not already in the connected list
     _primary_ids = [cid for cid in (cfg.main_group, cfg.exec_group) if cid]

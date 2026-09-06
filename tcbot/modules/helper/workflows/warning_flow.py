@@ -540,7 +540,18 @@ async def _execute_warn_auto_ban(
     log_msg_id: int = (
         log_result.message_id if not isinstance(log_result, BaseException) else 0
     )
-    groups: list = groups_result if not isinstance(groups_result, BaseException) else []
+    # * A groups-fetch failure must never silently shrink the enforcement
+    # * scope: the reply below counts only fanned groups, so without this
+    # * flag + suffix an outage would report full success while connected
+    # * groups were skipped. The ban record exists, so /tcban stays a valid
+    # * manual retry for anything missed.
+    groups_fetch_failed = isinstance(groups_result, BaseException)
+    if groups_fetch_failed:
+        log.error(
+            "Warn auto-ban groups fetch failed for target=%d; enforcing reduced scope",
+            target_id,
+        )
+    groups: list = [] if groups_fetch_failed else groups_result
     already_banned = (
         not isinstance(existing_ban, BaseException) and existing_ban is not None
     )
@@ -634,6 +645,12 @@ async def _execute_warn_auto_ban(
         )
     else:
         applied_line = f" Applied to {total_groups}/{total_groups} groups."
+    if groups_fetch_failed:
+        applied_line += (
+            " WARNING: the group list could not be loaded, so some groups "
+            "may have been skipped. Check the logs and re-ban manually with "
+            "/tcban if needed."
+        )
 
     if auto_ban_trigger == "per_group":
         ban_notice = (

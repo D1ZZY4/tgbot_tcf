@@ -202,6 +202,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 - **Ban record lands before the audit log post** (`tcbot/modules/helper/workflows/ban_flow.py`): the re-ban and fresh-ban helpers fanned the `bans` write and the logs-channel post in one gather, so a DB failure with a delivered post left a phantom ban card (dead appeal link, `/check` miss) that also weakened the appeal log-link gate. Both helpers now write first and post only on success, returning the same `(log_msg_id, db_ok)` contract; the fake-parallel old-admin name `create_task` (awaited immediately, zero overlap) is a direct await.
 
+- **Unban and appeal-approval load groups before deactivating** (`tcbot/modules/helper/workflows/unban_flow.py`, `appeal_flow.py`, `warning_flow.py`, `docs/features/moderation/unbanning.md`, `docs/features/appeals.md`, `docs/features/moderation/warnings.md`): unban and appeal-approval fanned the group list and the deactivation in one gather, so a groups-fetch failure with a committed deactivation left chats unbanned-nowhere with no record to retry from. The list now loads first (L1-cached, negligible latency cost) and aborts untouched on failure with the record intact, the review card preserved, and the tapper alerted. The warn auto-ban keeps its persist-first order but now error-logs a groups-fetch failure and appends a reduced-scope WARNING suffix instead of reporting full success over a shrunken scope; docs updated.
+
 </details>
 
 ## [6.5.0] - 2026-09-06

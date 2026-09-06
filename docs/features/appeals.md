@@ -190,8 +190,8 @@ The callback handler always answers the callback query before continuing once it
 
 When a staff member approves an appeal:
 
-1. All active bans for the user are deactivated with `bans_db.deactivate_all_active_bans(user_id)`, which clears any duplicate active records in one atomic operation. If this write fails, approval aborts before any group is touched (mirroring `execute_unban`): unbanning chats while the database still marks the user banned would split-brain and re-ban them on next join.
-2. Active connected groups are fetched from `groups_db.active_groups()`, with the primary groups (`cfg.main_group`, `cfg.exec_group`) appended when absent.
+1. Active connected groups are fetched from `groups_db.active_groups()`, with the primary groups (`cfg.main_group`, `cfg.exec_group`) appended when absent. If the fetch fails, approval aborts before deactivation with the review card untouched (a re-tap retries the full sequence); deactivating first would leave chats unbanned-nowhere with no record to re-drive.
+2. All active bans for the user are deactivated with `bans_db.deactivate_all_active_bans(user_id)`, which clears any duplicate active records in one atomic operation. If this write fails, approval aborts before any group is touched (mirroring `execute_unban`): unbanning chats while the database still marks the user banned would split-brain and re-ban them on next join.
 3. The review marker is cleared with `bans_db.clear_review(ban_id)` so a concurrent second decision sees no live review and stands down.
 4. The user is unbanned from every group with `unban_chat_member(..., only_if_banned=True)` through bounded fan-out. Partial transient failures are logged at error level.
 5. The user receives a DM telling them the appeal was approved.

@@ -213,7 +213,7 @@ The trigger uses `==` for per-group (race-condition-safe) and `>=` for federatio
 2. If the user does not already hold an active federation ban, `bans_db.create_ban()` creates a ban document in the `bans` collection (the same document used by `/tcban`). This makes the ban appealable via the standard appeal flow. If the write fails, the auto-ban aborts before any group is touched (fail-closed, mirroring `execute_unban`): the threshold warn stays recorded and the admin is told to ban manually with `/tcban` once the database recovers.
 3. `fan_out()` propagates `ban_chat_member` to all active connected groups plus MAIN_GROUP and EXTEND_GROUP.
 4. Per-group failures are logged at WARNING level with group title, chat_id, and exception.
-5. An applied-to summary is computed: "Applied to X/Y groups", "Applied to X/Y groups (Z failed: ...)", or "WARNING: ban not enforced in any group" when all fail.
+5. An applied-to summary is computed: "Applied to X/Y groups", "Applied to X/Y groups (Z failed: ...)", or "WARNING: ban not enforced in any group" when all fail. When the group-list fetch itself fails, the reply gains a reduced-scope WARNING suffix (and an error is logged) instead of reporting full success over the reachable subset.
 6. If at least one group ban succeeds, `warns_db.clear_all_warns(target_id)` clears warning history and counters across all groups.
 7. The originating group receives a reply that the user hit the warn limit and has been federation-banned, including the applied-to summary.
 8. If the user already holds an active federation ban, a new ban document is not created; `fan_out()` still runs to ensure enforcement in any newly connected groups.

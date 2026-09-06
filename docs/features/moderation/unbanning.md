@@ -18,9 +18,9 @@ flowchart TD
     Ident -->|self or bot| Refuse[identity.refuse_message]
     Ident -->|allowed| Parallel[Parallel: pre-fetch active ban]
     Parallel -->|no active ban| NoBan[Reply: no active ban]
-    Parallel -->|active ban| Deactivate[deactivate_all_active_bans]
-    Deactivate --> Groups[active_groups plus primary]
-    Groups --> Unban[unban_chat_member across groups]
+    Parallel -->|active ban| Groups[active_groups; abort untouched on failure]
+    Groups --> Deactivate[deactivate_all_active_bans]
+    Deactivate --> Unban[unban_chat_member across groups]
     Unban --> Log[Post unban log to cfg.logs]
     Unban --> Reply[Reply: removed from N/M groups]
 ```
@@ -49,7 +49,7 @@ Commands use the project's configured prefixes; slash commands are examples.
 4. The target must resolve to a Telegram user ID.
 5. The bot rejects attempts to unban itself via `identity.refuse_message`.
 6. The bot speculatively pre-fetches the active ban record in parallel with `identity.classify` and `resolve_and_check` so that `execute_unban` skips a redundant DB round-trip when the refusal check passes.
-7. `execute_unban` deactivates all active bans for the target, fetches active groups, cancels any pending scheduler unban job for the ban, fans `unban_chat_member` across every connected group plus the primary groups, posts the unban log, and replies with the success count.
+7. `execute_unban` fetches active groups first (aborting with the ban record intact when the list cannot be loaded, so a retry re-drives the full fan-out), then deactivates all active bans for the target, cancels any pending scheduler unban job for the ban, fans `unban_chat_member` across every connected group plus the primary groups, posts the unban log, and replies with the success count.
 
 ## Target resolution
 
