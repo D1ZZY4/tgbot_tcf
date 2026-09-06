@@ -208,6 +208,24 @@ async def set_review(ban_id: str, msg_id: int) -> None:
     )
 
 
+async def set_review_if_absent(ban_id: str, msg_id: int) -> bool:
+    """Atomically claim the pending-review slot; return True when claimed.
+
+    The filter matches only when no review is stored (``None`` also matches
+    a missing field in MongoDB), so two concurrent appeal submissions for
+    the same ban cannot both claim the slot: the loser sees
+    ``modified_count == 0`` and must discard its orphan review card instead
+    of overwriting the winner. Uses the unique ``ban_id`` index.
+    """
+    r = await db_call(
+        _bans().update_one(
+            {"ban_id": ban_id, "review_message_id": None},
+            {"$set": {"review_message_id": msg_id, "review_timestamp": utc_now()}},
+        )
+    )
+    return r.modified_count > 0
+
+
 async def clear_review(ban_id: str) -> None:
     """Clear review_message_id from a ban, allowing a new appeal to be submitted.
 

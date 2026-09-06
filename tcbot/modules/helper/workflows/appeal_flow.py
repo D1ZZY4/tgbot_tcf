@@ -78,6 +78,9 @@ _MSG_SESSION_ENDED = "Appeal session ended."
 _ERR_SESSION_EXPIRED = "Session expired - please start the appeal again."
 _ERR_INVALID_LOG = "Invalid log link. Please check and try again."
 _ERR_NOT_AUTHORIZED = "You are not authorized."
+_ERR_ROLE_LOOKUP = (
+    "I couldn't verify federation roles right now. Please try again in a moment."
+)
 _ERR_BAN_NOT_FOUND = "Ban record not found."
 _ERR_ALREADY_RESOLVED = "Appeal already resolved (ban is no longer active)."
 _ERR_REVIEW_LOCKED = (
@@ -426,6 +429,77 @@ class BuildAppeal:
             ):
                 ctx.user_data.pop(key, None)
             return ConversationHandler.END
+
+        # * Re-check the pending-review and rejection-cooldown gates from
+        # * _start: the ban may have gained a review (concurrent submit from
+        # * another session) or a rejection while this conversation waited
+        # * for the user to type. Submitting anyway would orphan a review
+        # * card or bypass the cooldown.
+        if fresh_ban.get("review_message_id"):
+            review_ts = fresh_ban.get("review_timestamp")
+            stale = review_ts is None or (
+                to_utc(review_ts) < utc_now() - _STALE_REVIEW_WINDOW
+            )
+            if stale:
+                try:
+                    await db.bans_db.clear_review(ban_id)
+                except Exception:
+                    _who = update.effective_user
+                    log.exception(
+                        "Appeal _on_message: failed to clear stale review for "
+                        "ban_id=%s user=%d; blocking submit to avoid corrupt state",
+                        ban_id,
+                        _who.id if _who is not None else 0,
+                    )
+                    with contextlib.suppress(Exception):
+                        await msg.reply_text(_ERR_PENDING_REVIEW)
+                    for key in (
+                        "appeal_ban_id",
+                        "appeal_log_msg_id",
+                        "appeal_instruction_msg_id",
+                    ):
+                        ctx.user_data.pop(key, None)
+                    return ConversationHandler.END
+            else:
+                try:
+                    await msg.reply_text(_ERR_PENDING_REVIEW)
+                except Exception as exc:
+                    log.debug("Appeal _on_message pending-review reply failed: %s", exc)
+                for key in (
+                    "appeal_ban_id",
+                    "appeal_log_msg_id",
+                    "appeal_instruction_msg_id",
+                ):
+                    ctx.user_data.pop(key, None)
+                return ConversationHandler.END
+
+        rejected_at = fresh_ban.get("rejected_at")
+        if rejected_at is not None:
+            elapsed = utc_now() - to_utc(rejected_at)
+            if elapsed < timedelta(0):
+                elapsed = timedelta(0)
+            if elapsed < _REJECTION_COOLDOWN:
+                remaining_h = (
+                    int(
+                        (_REJECTION_COOLDOWN - elapsed).total_seconds()
+                        / _SECONDS_PER_HOUR
+                    )
+                    + 1
+                )
+                try:
+                    await msg.reply_text(
+                        f"{_ERR_REJECTION_COOLDOWN} ({remaining_h}h remaining)"
+                    )
+                except Exception as exc:
+                    log.debug("Appeal _on_message cooldown reply failed: %s", exc)
+                for key in (
+                    "appeal_ban_id",
+                    "appeal_log_msg_id",
+                    "appeal_instruction_msg_id",
+                ):
+                    ctx.user_data.pop(key, None)
+                return ConversationHandler.END
+
         if not log_msg_id:
             log_msg_id = fresh_ban.get("log_message_id", 0)
 
@@ -498,21 +572,53 @@ class BuildAppeal:
         if isinstance(sent_log, BaseException):
             log.error("Appeal log failed: %s", sent_log)
 
-        # * Store review + log msg IDs in DB in parallel
-        db_tasks = []
+        # * Claim the pending-review slot atomically before storing anything
+        # * else: a concurrent submit for the same ban (another session that
+        # * passed the re-check above) must not overwrite the winner and
+        # * orphan its review card. The loser deletes its own orphan card
+        # * best-effort and tells the user the appeal is already pending.
+        claimed = False
         if review_msg_id:
-            db_tasks.append(db.bans_db.set_review(ban_id, review_msg_id))
+            try:
+                claimed = await db.bans_db.set_review_if_absent(ban_id, review_msg_id)
+            except Exception:
+                log.exception("Appeal claim-review failed for ban_id=%s", ban_id)
+                claimed = False
+            if not claimed:
+                log.warning(
+                    "Appeal submit lost the review race for ban_id=%s; "
+                    "discarding duplicate review_msg_id=%d",
+                    ban_id,
+                    review_msg_id,
+                )
+                try:
+                    await ctx.bot.delete_message(
+                        chat_id=cfg.main_group, message_id=review_msg_id
+                    )
+                except Exception as exc:
+                    log.debug(
+                        "Appeal orphan-card delete failed for ban_id=%s: %s",
+                        ban_id,
+                        exc,
+                    )
+                try:
+                    await msg.reply_text(_ERR_PENDING_REVIEW)
+                except Exception as exc:
+                    log.debug("Appeal race-loser reply failed: %s", exc)
+                for key in (
+                    "appeal_ban_id",
+                    "appeal_log_msg_id",
+                    "appeal_instruction_msg_id",
+                ):
+                    ctx.user_data.pop(key, None)
+                return ConversationHandler.END
         if appeal_log_sent_id and ban_id:
-            db_tasks.append(
-                db.bans_db.set_appeal_log_msg(
+            try:
+                await db.bans_db.set_appeal_log_msg(
                     ban_id, appeal_log_sent_id, appeal_link=appeal_link
                 )
-            )
-        if db_tasks:
-            db_results = await asyncio.gather(*db_tasks, return_exceptions=True)
-            for r in db_results:
-                if isinstance(r, BaseException):
-                    log.error("Appeal DB write failed for ban_id=%s: %s", ban_id, r)
+            except Exception:
+                log.exception("Appeal DB write failed for ban_id=%s", ban_id)
 
         # * Edit instruction message + cache user in parallel
         instr_mid = ctx.user_data.get("appeal_instruction_msg_id")
@@ -529,17 +635,32 @@ class BuildAppeal:
             uid, user.username, user.first_name, user.last_name
         )
 
-        if edit_coro:
-            await asyncio.gather(edit_coro, upsert_coro, return_exceptions=True)
+        if edit_coro is not None:
+            edit_r, upsert_r = await asyncio.gather(
+                edit_coro, upsert_coro, return_exceptions=True
+            )
+            if isinstance(edit_r, BaseException):
+                log.debug(
+                    "Appeal submitted-edit failed for ban_id=%s: %s", ban_id, edit_r
+                )
+            if isinstance(upsert_r, BaseException):
+                log.warning(
+                    "Appeal user-cache upsert failed for user=%d: %s",
+                    uid,
+                    upsert_r,
+                )
         else:
-            await upsert_coro
+            try:
+                await upsert_coro
+            except Exception as exc:
+                log.warning("Appeal user-cache upsert failed for user=%d: %s", uid, exc)
 
-        # * If BOTH the review post (line 441 ``rv``) and the log post
-        # * (line 449 ``sent_log``) failed, staff will never see the appeal
-        # * and the user is left waiting for a reply that will never come.
-        # * Edit the instruction message to a clear "we could not deliver
-        # * your appeal" reply -- otherwise the user believes the appeal
-        # * was received and may not re-submit for a long time.
+        # * If BOTH the review post (``rv``) and the log post (``sent_log``)
+        # * failed, staff will never see the appeal and the user is left
+        # * waiting for a reply that will never come. Edit the instruction
+        # * message to a clear "we could not deliver your appeal" reply,
+        # * otherwise the user believes the appeal was received and may not
+        # * re-submit for a long time.
         if review_msg_id is None and appeal_log_sent_id is None:
             log.error(
                 "submit_appeal: BOTH review post and appeal log post failed "
@@ -556,9 +677,11 @@ class BuildAppeal:
                     )
                 except Exception as exc:
                     log.debug("submit_appeal delivery-failed reply failed: %s", exc)
-            # * Do NOT clear user_data; the user should be able to retry the
-            # * appeal from the same conversation state.
-            return ConversationHandler.END
+            # * Stay in WAITING_APPEAL with user_data intact so the user can
+            # * retry by sending another #appeal message without reopening
+            # * the deep link. Returning END here would end the conversation
+            # * while keeping stale keys, leaving no in-place retry path.
+            return WAITING_APPEAL
 
         # * Clear appeal keys so user_data is clean after successful submission.
         for key in (
@@ -580,11 +703,18 @@ class BuildAppeal:
 
         admin = update.effective_user
         if admin is None:
+            try:
+                await q.answer()
+            except Exception as exc:
+                log.debug("Appeal decision answer failed with no user: %s", exc)
             return
 
         data = q.data
         if not data or not data.startswith(("appeal_approve_", "appeal_reject_")):
-            await q.answer()
+            try:
+                await q.answer()
+            except Exception as exc:
+                log.debug("Appeal decision answer failed for unknown data: %s", exc)
             return
 
         if data.startswith("appeal_approve_"):
@@ -594,19 +724,38 @@ class BuildAppeal:
             action = "reject"
             ban_id = data[len("appeal_reject_") :]
 
-        # * Pre-fetch ban record alongside staff check and q.answer();
-        # * ban_id is known from callback data so the DB call fires speculatively.
-        is_staff, ban_result, _ = await asyncio.gather(
-            db.users_roles.is_staff(admin.id),
+        # * Pre-fetch the reviewer role alongside the ban record and q.answer();
+        # * ban_id is known from callback data so the DB calls fire speculatively.
+        # * get_effective_role (not is_staff) is used so a database outage
+        # * surfaces as an exception and gets a retry hint instead of being
+        # * coerced to False and misreported as "not authorized".
+        role_result, ban_result, _ = await asyncio.gather(
+            db.users_roles.get_effective_role(admin.id),
             db.bans_db.get_ban(ban_id),
             q.answer(),
             return_exceptions=True,
         )
-        if isinstance(is_staff, BaseException) or not is_staff:
+        if isinstance(role_result, BaseException):
+            if isinstance(role_result, asyncio.CancelledError):
+                raise role_result
+            log.warning(
+                "Appeal review role lookup failed for %d: %s", admin.id, role_result
+            )
+            # * Never edit the shared review card on an unmade decision:
+            # * the card must stay actionable for another staffer.
             try:
-                await q.edit_message_text(_ERR_NOT_AUTHORIZED)
+                await q.answer(_ERR_ROLE_LOOKUP, show_alert=True)
             except Exception as exc:
-                log.debug("Appeal not-authorized edit failed: %s", exc)
+                log.debug("Appeal role-lookup answer failed: %s", exc)
+            return
+        if role_result not in ("founder", "admin"):
+            # * Answer with an alert instead of editing: the tapper is not
+            # * staff, and editing would destroy the shared review card that
+            # * staff still need to act on.
+            try:
+                await q.answer(_ERR_NOT_AUTHORIZED, show_alert=True)
+            except Exception as exc:
+                log.debug("Appeal not-authorized answer failed: %s", exc)
             return
         if isinstance(ban_result, BaseException):
             log.error("get_ban failed in appeal review for %s: %s", ban_id, ban_result)
@@ -623,33 +772,51 @@ class BuildAppeal:
             return
         ban = ban_result
 
+        # * An inactive ban with a live review marker is a stale card left
+        # * behind by a manual /tcunban (which never touches review state).
+        # * Clean it up so the card reflects reality; this is the only
+        # * resolved path that edits, because no verdict exists to clobber.
         if not ban.get("is_active"):
-            try:
-                await q.edit_message_text(_ERR_ALREADY_RESOLVED, reply_markup=None)
-            except Exception as exc:
-                log.debug("Appeal already-resolved edit failed: %s", exc)
+            if ban.get("review_message_id"):
+                try:
+                    await db.bans_db.clear_review(ban_id)
+                except Exception:
+                    log.exception(
+                        "Appeal stale-card clear_review failed for ban %s", ban_id
+                    )
+                try:
+                    await q.edit_message_text(_ERR_ALREADY_RESOLVED, reply_markup=None)
+                except Exception as exc:
+                    log.debug("Appeal already-resolved edit failed: %s", exc)
+            else:
+                try:
+                    await q.answer(_ERR_ALREADY_RESOLVED, show_alert=True)
+                except Exception as exc:
+                    log.debug("Appeal already-resolved answer failed: %s", exc)
             return
 
         # * A review that is already rejected or has no live review marker
         # * was decided by a concurrent tap. Acting again would double-DM
         # * the user, double-edit the card, or unban after a rejection.
+        # * Alert only: the winner already edited the card with its verdict
+        # * and overwriting it would destroy that outcome.
         if ban.get("rejected_at") is not None or not ban.get("review_message_id"):
             try:
-                await q.edit_message_text(_ERR_ALREADY_RESOLVED, reply_markup=None)
+                await q.answer(_ERR_ALREADY_RESOLVED, show_alert=True)
             except Exception as exc:
-                log.debug("Appeal already-resolved edit failed: %s", exc)
+                log.debug("Appeal already-resolved answer failed: %s", exc)
             return
 
         review_ts = ban.get("review_timestamp")
         if review_ts and reviewer_locked_out(
             review_ts, ban.get("admin_user_id") or 0, admin.id
         ):
-            # * q.answer() was already called in the gather above; use
-            # * edit_message_text to surface the lock message instead.
+            # * Alert only: editing would destroy the shared card that the
+            # * banning admin still needs to act on within their window.
             try:
-                await q.edit_message_text(_ERR_REVIEW_LOCKED)
+                await q.answer(_ERR_REVIEW_LOCKED, show_alert=True)
             except Exception as exc:
-                log.debug("Appeal review-locked edit failed: %s", exc)
+                log.debug("Appeal review-locked answer failed: %s", exc)
             return
 
         target_id = ban.get("banned_user_id", 0)
@@ -757,7 +924,10 @@ class BuildAppeal:
 
         appeal_link = ban.get("appeal_link") or ""
         appeal_submitted_at = ban.get("appeal_submitted_at")
-        await asyncio.gather(
+        # * The four notifications are independent; capture each result so a
+        # * silent DM, card-edit, or log failure is visible to operators
+        # * instead of being swallowed like the reject path used to do.
+        dm_r, card_r, log_r, unban_log_r = await asyncio.gather(
             bot.send_message(
                 target_id,
                 f"Your appeal for ban {code(ban_id)} has been approved - "
@@ -798,6 +968,30 @@ class BuildAppeal:
             ),
             return_exceptions=True,
         )
+        if isinstance(dm_r, BaseException):
+            log.warning(
+                "approve_appeal DM to %d failed for ban %s: %s",
+                target_id,
+                ban_id,
+                dm_r,
+            )
+        if isinstance(card_r, BaseException):
+            log.warning(
+                "approve_appeal review-card edit failed for ban %s: %s", ban_id, card_r
+            )
+        if isinstance(log_r, BaseException):
+            log.warning(
+                "approve_appeal appeal-log update failed for ban %s: %s",
+                ban_id,
+                log_r,
+            )
+        if isinstance(unban_log_r, BaseException):
+            log.error(
+                "approve_appeal unban log send failed for user %d ban %s: %s",
+                target_id,
+                ban_id,
+                unban_log_r,
+            )
 
     async def _reject_appeal(
         self,
@@ -925,7 +1119,11 @@ def reviewer_locked_out(
     reviewer_id: int,
 ) -> bool:
     """Check whether reviewer_id is blocked from reviewing within the lock window."""
-    if review_timestamp is None or ban_admin_id is None:
+    # * A missing or zero ban_admin_id means the ban owner is unknown
+    # * (legacy record): fail open with no lock, matching the documented
+    # * contract. Failing closed here would lock out every reviewer for
+    # * 12 hours with nobody able to act.
+    if review_timestamp is None or not ban_admin_id:
         return False
     if reviewer_id == ban_admin_id:
         return False
