@@ -299,26 +299,6 @@ async def user_warn_groups(user_id: int) -> list[tuple[int, int]]:
     return [(int(d["chat_id"]), int(d["count"])) for d in docs]
 
 
-async def user_all_warns(user_id: int) -> list[WarnDoc]:
-    """Every warn document for a user across all chats, newest first."""
-    return await db_call(
-        _warns()
-        .find(
-            {"user_id": user_id},
-            {
-                "_id": 0,
-                "user_id": 1,
-                "reason": 1,
-                "admin_id": 1,
-                "chat_id": 1,
-                "timestamp": 1,
-            },
-            sort=[("timestamp", -1)],
-        )
-        .to_list(length=None)
-    )
-
-
 async def migrate_records(old_chat_id: int, new_chat_id: int) -> bool:
     """Repoint every warn record and counter from ``old_chat_id`` to ``new_chat_id``.
 

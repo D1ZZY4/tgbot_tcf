@@ -179,7 +179,7 @@ Key helper functions:
 - `warns_db.add_warn(user_id, reason, admin_id, chat_id)`: records a warning and returns the new warn count.
 - `warns_db.warn_count(user_id, chat_id)` / `warns_db.get_warns(user_id, chat_id)`: current count and full list for a user in a group.
 - `warns_db.remove_last_warn(user_id, chat_id)` / `warns_db.clear_warns(user_id, chat_id)`: undo latest warning or reset all.
-- `warns_db.user_total_warns(user_id)` / `warns_db.user_warn_groups(user_id)` / `warns_db.user_all_warns(user_id)`: federation-wide warn aggregates used by `/check`.
+- `warns_db.user_total_warns(user_id)` / `warns_db.user_warn_groups(user_id)`: federation-wide warn aggregates used by `/check`.
 - `warns_db.federation_warn_count(user_id)`: total warn count across all connected groups; used by `warning_flow.execute_warn` to evaluate the `FED_WARN_LIMIT` threshold.
 - `warns_db.migrate_records(old_chat_id, new_chat_id)`: repoints `warns` and `warn_counts` documents from a legacy basic-group `chat_id` to its new supergroup `chat_id`; called by `greeting.on_chat_migration` alongside `groups_db.migrate_group` so warning history and thresholds survive a chat migration.
 

@@ -56,6 +56,7 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 - **Dead prefix filter** (`tcbot/utils/prefixes.py`): removed `ANY_CMD_FILTER` plus its `_custom_prefixes` / `_get_custom_prefixes()` support. Zero in-tree importers (verified by search); `ALL_PREFIXES_CMD_FILTER` is the live filter used by conversation fallbacks.
 - **Dead check_flow re-export** (`tcbot/modules/helper/workflows/check_flow.py`): removed `build_ban_detail` from `__all__`. The import stays for internal use; all external consumers import from `ban_info` directly (verified by search).
+- **Dead helpers** (`tcbot/database/warns_db.py`, `groups_db.py`, `modules/helper/keyboards.py`): removed `user_all_warns()` (zero callers; `/check` uses `user_total_warns` + `user_warn_groups`), `get_group()` (zero callers; `get_group_titles` is the live lookup), and `back_to_privacy_kb()` (zero callers; `privacy_policy_sections_kb` already inlines the back button). Related `database.md`, `check.md`, and `helpers.md` rows updated.
 
 ### Documentation
 

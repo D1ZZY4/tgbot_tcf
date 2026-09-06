@@ -278,17 +278,6 @@ def privacy_kb() -> InlineKeyboardMarkup:
     )
 
 
-def back_to_privacy_kb() -> InlineKeyboardMarkup:
-    """Single Back button that returns the user to the privacy section."""
-    return InlineKeyboardMarkup(
-        [
-            [
-                InlineKeyboardButton("« Back", callback_data="privacy_menu"),
-            ]
-        ]
-    )
-
-
 def privacy_policy_sections_kb(section_labels: list[str]) -> InlineKeyboardMarkup:
     """Policy index keyboard: one button per section + Back to privacy data."""
     pairs: list[tuple[str, str]] = [

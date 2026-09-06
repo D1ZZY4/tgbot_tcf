@@ -42,11 +42,6 @@ def _pending() -> AsyncIOMotorCollection:
 # ! CRITICAL: Cache invalidation is crucial here - always clear caches on changes
 
 
-async def get_group(chat_id: int) -> GroupDoc | None:
-    """Get the full group record for a specific chat ID."""
-    return await db_call(_groups().find_one({"chat_id": chat_id}))
-
-
 async def get_group_titles(chat_ids: list[int]) -> dict[int, str]:
     """Return {chat_id: title} for the given chat_ids; missing groups are absent."""
     if not chat_ids:
