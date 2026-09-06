@@ -596,4 +596,4 @@ async def _per_chat_event_list(
     return "\n".join(lines), InlineKeyboardMarkup(rows)
 
 
-__all__ = ("Check", "build_ban_detail")
+__all__ = ("Check",)

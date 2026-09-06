@@ -44,11 +44,6 @@ def _get_prefixes() -> list[str]:
     return [p for p in (cfg.prefixes or ["/"]) if p and p.strip()]
 
 
-def _get_custom_prefixes() -> list[str]:
-    """Return configured prefixes excluding the native Telegram slash (/)."""
-    return [p for p in _get_prefixes() if p != "/"]
-
-
 def _never_match_filter() -> filters.BaseFilter:
     """Return a valid filter that intentionally never matches any message text."""
     return filters.Regex(re.compile(r"a^"))
@@ -148,15 +143,6 @@ def build_prefixed_filters(command: str) -> filters.BaseFilter:
     """Return a filter matching exact lowercase <prefix><command> for configured prefixes."""
     return _PrefixedCommandFilter(command.lower(), _get_prefixes())
 
-
-# * Matches !, . etc.; does NOT match Telegram-native /commands
-# * Used in __main__.py member-cache guard (intentionally excludes /)
-_custom_prefixes = _get_custom_prefixes()
-ANY_CMD_FILTER: filters.BaseFilter = (
-    _AnyPrefixedCommandFilter(_custom_prefixes, name="AnyCustomPrefixedCommand")
-    if _custom_prefixes
-    else _never_match_filter()
-)
 
 # * Includes /, !, .; use in ConversationHandler fallbacks to catch all commands
 _prefixes = _get_prefixes()

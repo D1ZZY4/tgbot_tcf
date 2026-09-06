@@ -46,6 +46,11 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 - **Error-report traceback scrub** (`tcbot/utils/error_reporter.py`): `build_error_message` scrubbed the message and context but embedded `_condensed_tb(exc)` raw, so a credential-echoing exception (bot token, Mongo URI) could leak to `LOGS_ERRORS`. The traceback block is now passed through `_scrub_secrets` before `pre()`.
 - **Cleanup fail-closed** (`tcbot/modules/maintenance.py`): `_should_remove` returned `True` on any membership-check exception, so a transient Telegram blip made every checked group look removable and `cmd_cleanup` mass-deactivated healthy groups. The exception path now returns `False` (keep the group) with a warning log.
 
+### Removed
+
+- **Dead prefix filter** (`tcbot/utils/prefixes.py`): removed `ANY_CMD_FILTER` plus its `_custom_prefixes` / `_get_custom_prefixes()` support. Zero in-tree importers (verified by search); `ALL_PREFIXES_CMD_FILTER` is the live filter used by conversation fallbacks.
+- **Dead check_flow re-export** (`tcbot/modules/helper/workflows/check_flow.py`): removed `build_ban_detail` from `__all__`. The import stays for internal use; all external consumers import from `ban_info` directly (verified by search).
+
 ## [6.4.0] - 2026-09-05
 
 ### Changed
