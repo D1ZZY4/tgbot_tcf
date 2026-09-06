@@ -596,8 +596,12 @@ async def on_proof_received(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> i
     if ctx.user_data.get("ban_executing"):
         return ConversationHandler.END
     ctx.user_data["ban_executing"] = True
-    await _execute_ban(ctx.bot, [msg], dict(ctx.user_data))
-    _clear_ban_state(ctx.user_data)
+    # * Clear state even when the executor raises so the next proof is not
+    # * wedged by a stale ban_executing flag; mirrors _flush_album try/finally.
+    try:
+        await _execute_ban(ctx.bot, [msg], dict(ctx.user_data))
+    finally:
+        _clear_ban_state(ctx.user_data)
     return ConversationHandler.END
 
 
