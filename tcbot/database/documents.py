@@ -1,6 +1,6 @@
 # © Copyright 2024 - 2026 Transsion Core
 # © Copyright 2024 - 2026 Dizzy
-# © Copyright 2026 Ave Studio
+# © Copyright 2026 Ave Labs
 
 """TypedDict document schemas for MongoDB collections."""
 
@@ -130,8 +130,10 @@ class ActiveMuteDoc(TypedDict, total=False):
     ``until_date`` is ``None`` for a permanent mute or a UTC datetime for a
     timed mute.  Documents for timed mutes are auto-filtered by ``until_date``
     at query time (documents with ``until_date`` in the past are treated as
-    expired and ignored).  Use ``set_active_mute`` / ``clear_active_mute`` from
-    ``mutes_db`` to manage this collection; do not write directly.
+    expired and ignored).  A TTL index additionally prunes expired timed rows
+    from storage; permanent mutes are never TTL-expired.  Use
+    ``set_active_mute`` / ``clear_active_mute`` from ``mutes_db`` to manage
+    this collection; do not write directly.
     """
 
     user_id: UserId

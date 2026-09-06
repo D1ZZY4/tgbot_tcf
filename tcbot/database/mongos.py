@@ -1,6 +1,6 @@
 # © Copyright 2024 - 2026 Transsion Core
 # © Copyright 2024 - 2026 Dizzy
-# © Copyright 2026 Ave Studio
+# © Copyright 2026 Ave Labs
 
 """MongoDB connection manager - single client shared across the entire application."""
 
@@ -212,6 +212,11 @@ async def ensure_indexes() -> None:
         col("active_mutes").create_index([("until_date", 1)]),
         # * Compound for get_active_mute() $or filter on specific user
         col("active_mutes").create_index([("user_id", 1), ("until_date", 1)]),
+        # * TTL: MongoDB auto-deletes expired timed mutes (until_date <= now).
+        # * Permanent mutes (until_date None/missing) are never TTL-expired,
+        # * matching the query-time filter in get_active_mute/active_mute_docs,
+        # * so this only prunes rows those queries already ignore.
+        col("active_mutes").create_index([("until_date", 1)], expireAfterSeconds=0),
         # * TTL index: MongoDB auto-expires member_cache docs older than _MEMBER_CACHE_TTL_DAYS.
         # * Replaces the APScheduler weekly cleanup job, shrinking the scheduler surface.
         col("member_cache").create_index(
