@@ -37,6 +37,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Fixed
 
+- **Batch first-name lookups check L1 first** (`tcbot/database/users_cache.py`): `get_first_names_batch` (used by check/stats renders) hit MongoDB on every call even for cached users. L1 hits are now served without I/O and only uncached IDs trigger the batch query; not-found IDs cache the sentinel. Found rows are deliberately not written back (the projection omits `last_name`, which would corrupt triple change detection).
+
 - **Cache L3 write no longer blocks the hot path** (`tcbot/database/cache.py`): `TwoLevelCache.get_or_fetch` awaited the Redis SET after every DB fetch, adding up to a full Redis round-trip (10 s socket timeout) to each L1 miss even though the value was already served from L1. The write is now fire-and-forget; FIFO ordering against later invalidates is preserved by the mutation chain and failures still surface via the task log callback.
 
 - **Stats search falls back to a reply without a result card** (`tcbot/modules/stats.py`): on the message-less search-panel path the query was deleted but results had no card to edit into, silently dropping them. The results are now sent as a reply instead; stored paging still works.

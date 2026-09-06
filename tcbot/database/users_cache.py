@@ -1,6 +1,6 @@
 # © Copyright 2024 - 2026 Transsion Core
 # © Copyright 2024 - 2026 Dizzy
-# © Copyright 2026 Ave Studio
+# © Copyright 2026 Ave Labs
 
 """Member profile cache helpers.
 
@@ -272,24 +272,40 @@ async def get_mention_data_batch(
 
 
 async def get_first_names_batch(user_ids: list[int]) -> dict[int, str]:
-    """Fetch first names for multiple users in a single query.
+    """Fetch first names for multiple users, checking L1 first.
 
-    Optimized batch query that replaces multiple individual get_first_name()
-    calls with a single database roundtrip.
+    IDs already in the in-memory mention cache are served without I/O; only
+    uncached IDs trigger one batch MongoDB query. Users missing from the DB
+    get the not-found sentinel cached so repeat renders skip the round-trip.
+    Found rows are deliberately NOT written back: the batch projection omits
+    ``last_name``, and caching a partial triple would corrupt the change
+    detection in ``upsert_user_if_changed``.
     """
     if not user_ids:
         return {}
+    result: dict[int, str] = {}
+    missing: list[int] = []
+    for uid in user_ids:
+        cached = user_mention_cache.get(uid)
+        if cached is not CACHE_MISS:
+            data = cast("list[str | None]", cached)
+            result[uid] = cast("str", data[0]) if data[0] is not None else str(uid)
+        else:
+            missing.append(uid)
+    if not missing:
+        return result
     docs = await db_call(
         _members()
-        .find({"user_id": {"$in": user_ids}}, {"user_id": 1, "first_name": 1})
+        .find({"user_id": {"$in": missing}}, {"user_id": 1, "first_name": 1})
         .to_list(None)
     )
-    result = {
-        doc["user_id"]: doc.get("first_name") or str(doc["user_id"]) for doc in docs
-    }
+    for doc in docs:
+        uid = doc["user_id"]
+        result[uid] = doc.get("first_name") or str(uid)
     # Fill in missing users with defaults
-    for uid in user_ids:
+    for uid in missing:
         if uid not in result:
+            user_mention_cache.put(uid, list(_NOT_FOUND_SENTINEL))
             result[uid] = str(uid)
     return result
 
