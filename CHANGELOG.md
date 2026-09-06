@@ -55,6 +55,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Fixed
 
+- **Unban log renders the deactivated ban ID** (`tcbot/modules/helper/parse_logmsg.py`): `unban_log()` accepted `ban_id` but never rendered it, so the manual `/tcunban` audit entry lost the link between the log line and the deactivated record (the sole caller `unban_flow.execute_unban` already passes it, and `docs/features/moderation/unbanning.md` already documents it). The template now emits a `Ban ID` code field like the ban and appeal-unban logs. Also removed the never-passed, never-rendered `update_count` parameter from `ban_update_log()` (single caller passes positionally without it).
+
 - **Ban fail-closed on database write failure** (`tcbot/modules/helper/workflows/ban_flow.py`): `create_ban` / `update_ban` failures were only logged while the flow still fanned out `ban_chat_member`, sent a PM with an appeal link for a record that does not exist, and reported success. The helpers now return `(log_msg_id, db_ok)` and `_execute_ban` aborts before any group is touched, edits the prompt with a database-retry notice, and discards the pre-fetched groups. This mirrors the warn auto-ban and `execute_unban` fail-closed paths and avoids an un-appealable split brain.
 
 - **Ban reply reason keeps leading ID-like tokens** (`tcbot/modules/banning.py`): reply-target commands derived `has_explicit_target` from the shape of `raw_args[0]` alone, so reply + `/tcb 12345 spamming` dropped `12345` from the stored reason. The entry now mirrors `extract_target` priority 1 (including the anonymous-admin sender_chat skip) and treats every argument as reason text on a reply target. Entry asserts became guard returns so a missing message/user never crashes the handler.

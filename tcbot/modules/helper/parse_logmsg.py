@@ -167,7 +167,6 @@ def ban_update_log(
     original_ts: datetime,
     proof_lnk: str | None = None,
     prev_proof_lnk: str | None = None,
-    update_count: int = 0,
 ) -> str:
     """Update-ban audit-log message."""
     # * Note: proof_lnk / prev_proof_lnk are passed through for the inline
@@ -392,6 +391,7 @@ def unban_log(
         .mention_field("Admin", admin_id, admin_fname)
         .mention_field("User", target_id, target_fname)
         .code_field("User ID", target_id)
+        .code_field("Ban ID", ban_id)
     )
     if reason:
         b.field("Unban Reason", reason)
