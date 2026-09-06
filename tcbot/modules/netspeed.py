@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import ssl
 from typing import TYPE_CHECKING
 
-from speedtest import ConfigRetrievalError, Speedtest
+import certifi
+from speedtest import ConfigRetrievalError, Speedtest, SpeedtestHTTPSHandler
 from telegram.ext import ContextTypes, MessageHandler
 
 from tcbot.modules.helper import decorators, replies
@@ -82,13 +84,56 @@ def _readable_size(size_bytes: float) -> str:
 
 # ────────────── Blocking speedtest worker (thread executor) ─────── #
 
+# * Lazily built certifi context shared by every speedtest run in this
+# * process. Built once: reading the bundle file per connection is wasteful,
+# * and runs are rare (Founder-only, rate-limited).
+_SSL_CONTEXT: ssl.SSLContext | None = None
+
+
+def _install_certifi_context(opener: object) -> None:
+    """Point an opener's HTTPS handlers at the certifi bundle, in place.
+
+    speedtest-cli 2.1.x builds its opener with ``context=None``, so every
+    HTTPS connection falls back to the system CA store, which fails with
+    CERTIFICATE_VERIFY_FAILED on sandboxes without a usable
+    /etc/ssl/certs (same environment issue as the MongoDB clients, fixed
+    there via ``mongo_client_kwargs``). The library offers no context
+    parameter, so patch the handler objects directly; the same opener
+    instance is shared by ``Speedtest`` and its ``SpeedtestResults``,
+    covering config, servers, download, upload, and share alike.
+    Pinned assumption: the ``SpeedtestHTTPSHandler._context`` attribute
+    in ``speedtest-cli>=2.1,<3`` (the pinned range in pyproject.toml).
+    """
+    global _SSL_CONTEXT
+    if _SSL_CONTEXT is None:
+        _SSL_CONTEXT = ssl.create_default_context(cafile=certifi.where())
+    handlers: list = getattr(opener, "handlers", [])
+    for handler in handlers:
+        if isinstance(handler, SpeedtestHTTPSHandler):
+            handler._context = _SSL_CONTEXT
+
+
+class _CertifiSpeedtest(Speedtest):
+    """Speedtest trusting the certifi bundle instead of the system CA store.
+
+    Base ``__init__`` assigns ``self._opener`` before its first
+    ``get_config()`` call, so overriding ``get_config`` is the earliest
+    hook to patch the opener before any network use (the constructor
+    itself performs the failing config fetch).
+    """
+
+    def get_config(self) -> dict | None:
+        """Fetch config after pointing the opener at the certifi bundle."""
+        _install_certifi_context(self._opener)
+        return super().get_config()
+
 
 def _run_speedtest() -> dict:
     """Run a full speedtest synchronously; intended for thread-executor use only."""
     # * Retry config fetch once; Ookla sometimes returns transient 403s.
     for attempt in range(2):
         try:
-            st = Speedtest()
+            st = _CertifiSpeedtest()
             st.get_best_server()
             st.download()
             st.upload()
