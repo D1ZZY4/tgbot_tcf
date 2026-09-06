@@ -133,23 +133,34 @@ class _AsyncRateLimiter:
         member = str(time.time_ns())
 
         try:
-            result = await r.eval(
-                _RL_LUA,
-                1,
-                key,
-                str(now),
-                str(self.window),
-                str(self.max_calls),
-                member,
+            result = await asyncio.wait_for(
+                r.eval(
+                    _RL_LUA,
+                    1,
+                    key,
+                    str(now),
+                    str(self.window),
+                    str(self.max_calls),
+                    member,
+                ),
+                timeout=_RL_REDIS_TIMEOUT_S,
             )
             if result == 0:
                 return 0.0
             # * result = ceil(wait * 10) - convert back to seconds
             return round(int(result) / 10.0, 1)
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
             log.debug("Redis rate limiter error, using local fallback: %s", exc)
             return self._local.check(uid)
 
+
+# * Upper bound for one Redis rate-limit round trip. The socket default is
+# * far higher; without this cap a stalled Redis would hold every command
+# * and callback for seconds before the local fallback runs. A timeout
+# * falls through to the in-process bucket, so limiting is never disabled.
+_RL_REDIS_TIMEOUT_S: float = 1.5
 
 # * Commands : 8 calls per 30 s - comfortable for regular moderation
 _cmd_limiter = _AsyncRateLimiter(max_calls=8, window=30.0, prefix="cmd")
@@ -328,8 +339,10 @@ def owner_only(func: Callable) -> Callable:
             # * Fail closed with a retry reply on DB outage instead of letting
             # * the lookup exception escape with no user feedback. Cancellation
             # * still propagates.
+            # * Served from the cached owner ID (300 s TTL) so repeated
+            # * Founder checks cost zero MongoDB round trips on cache hits.
             try:
-                authorized = await db.users_roles.is_owner(uid)
+                authorized = (await db.users_roles.get_owner_id()) == uid
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
@@ -368,8 +381,16 @@ def staff_only(func: Callable) -> Callable:
         uid = update.effective_user.id if update.effective_user else None
         if uid:
             # * Same fail-closed outage handling as owner_only (see above).
+            # * Served from the cached effective role (60 s TTL) instead of
+            # * two uncached reads, so repeated staff checks cost zero
+            # * MongoDB round trips on cache hits. Uses get_effective_role
+            # * (not is_staff) so an outage propagates here and gets the
+            # * retry hint instead of being coerced to a false denial; this
+            # * mirrors the appeal-review path precedent.
             try:
-                authorized = await db.users_roles.is_staff(uid)
+                authorized = db.users_roles.role_rank(
+                    await db.users_roles.get_effective_role(uid)
+                ) >= db.users_roles.role_rank("admin")
             except asyncio.CancelledError:
                 raise
             except Exception as exc:

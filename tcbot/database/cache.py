@@ -107,6 +107,12 @@ _redis_tails: dict[tuple[str, asyncio.AbstractEventLoop], asyncio.Task[None]] = 
 # * Distinct from None because None is a valid cache value (e.g. user has no role).
 CACHE_MISS: object = object()
 
+# * Upper bound for one Redis L2 read on the get_or_fetch hot path. The
+# * socket default is far higher; without this cap a stalled Redis would
+# * hold every L1 miss for seconds before the DB fetch runs. A timeout
+# * falls through to the DB fetch, so correctness never depends on Redis.
+_REDIS_GET_TIMEOUT_S: float = 1.0
+
 
 # ───────────────────────── TTL Cache Class ──────────────────────── #
 # * Core single-process in-memory implementation with TTL expiration.
@@ -316,16 +322,20 @@ class TwoLevelCache[T]:
                 if val is not CACHE_MISS:
                     return cast("T", val)
 
-                # L2: Redis
+                # L2: Redis (bounded: a stalled Redis must not hold the hot path)
                 rc = _redis_client()
                 if rc is not None:
                     rkey = self._rkey(key)
                     try:
-                        raw = await rc.get(rkey)
+                        raw = await asyncio.wait_for(
+                            rc.get(rkey), timeout=_REDIS_GET_TIMEOUT_S
+                        )
                         if raw is not None:
                             loaded: T = json.loads(raw, object_hook=_mongo_object_hook)
                             self._mem.put(key, loaded)
                             return loaded
+                    except asyncio.CancelledError:
+                        raise
                     except Exception as exc:
                         log.debug("Redis get failed for %s: %s", rkey, exc)
 

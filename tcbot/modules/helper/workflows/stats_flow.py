@@ -502,7 +502,37 @@ class Stats:
     async def ban_detail(
         cls, page: int, idx: int, stable: str | None = None
     ) -> tuple[str, InlineKeyboardMarkup]:
-        """Detail card for a banned user, reusing ``build_ban_detail``."""
+        """Detail card for a banned user, reusing ``build_ban_detail``.
+
+        When the button carries the stable ban ID, the record is fetched
+        directly by ID (one indexed read) instead of re-reading the whole
+        active-ban list: faster and immune to list shifts between render
+        and tap. Inactive or missing records still report not-found, matching
+        the list-derived path. Buttons without the stable segment keep the
+        legacy list-index lookup.
+        """
+        if stable is not None:
+            ban = await db.bans_db.get_ban(stable)
+            if not ban or not ban.get("is_active"):
+                text = _ERR_BAN_NOT_FOUND
+                kb = InlineKeyboardMarkup(
+                    [
+                        [
+                            InlineKeyboardButton(
+                                "« Back", callback_data=f"stats_bans:{page}"
+                            )
+                        ]
+                    ]
+                )
+                return text, kb
+            text, proof_link = await build_ban_detail(cast("dict", ban))
+            rows: list[list[InlineKeyboardButton]] = []
+            if proof_link:
+                rows.append([InlineKeyboardButton("View Proof", url=proof_link)])
+            rows.append(
+                [InlineKeyboardButton("« Back", callback_data=f"stats_bans:{page}")]
+            )
+            return text, InlineKeyboardMarkup(rows)
         bans = await db.bans_db.active_bans()
         chunk, _total, page = paginate(bans, page, _PAGE_SIZE)
         if idx < 0 or idx >= len(chunk):
@@ -512,12 +542,6 @@ class Stats:
             )
             return text, kb
         ban = chunk[idx]
-        if stable is not None and str(ban.get("ban_id", "")) != stable:
-            text = _ERR_BAN_NOT_FOUND
-            kb = InlineKeyboardMarkup(
-                [[InlineKeyboardButton("« Back", callback_data=f"stats_bans:{page}")]]
-            )
-            return text, kb
         text, proof_link = await build_ban_detail(ban)
         rows: list[list[InlineKeyboardButton]] = []
         if proof_link:

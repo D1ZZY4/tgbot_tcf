@@ -68,11 +68,14 @@ async def get_owner_id() -> int | None:
 
 
 async def is_owner(user_id: int) -> bool:
-    """Return True if user_id belongs to the bot owner."""
-    return (
-        await db_call(col("tc_owners").find_one({"user_id": user_id}, {"_id": 1}))
-        is not None
-    )
+    """Return True if user_id belongs to the bot owner.
+
+    Served from the cached owner ID (300 s L1 TTL, invalidated on
+    transfer) instead of a dedicated ``find_one`` so hot auth paths pay
+    zero MongoDB round trips on cache hits. Errors propagate like the
+    previous direct read so decorators keep their fail-closed retry reply.
+    """
+    return (await get_owner_id()) == user_id
 
 
 async def ensure_initial_owner(initial_id: int) -> None:
@@ -119,23 +122,23 @@ async def is_admin(user_id: int) -> bool:
 
 
 async def is_staff(user_id: int) -> bool:
-    """Return True if user_id is owner or admin."""
-    owner, admin = await asyncio.gather(
-        is_owner(user_id), is_admin(user_id), return_exceptions=True
-    )
-    # * Cancellation is not a lookup result: re-raise instead of coercing to
-    # * False, matching can_act_on/resolve_and_check semantics.
-    if isinstance(owner, asyncio.CancelledError):
-        raise owner
-    if isinstance(admin, asyncio.CancelledError):
-        raise admin
-    if isinstance(owner, BaseException):
-        log.warning("is_staff owner check failed for %d: %s", user_id, owner)
-        owner = False
-    if isinstance(admin, BaseException):
-        log.warning("is_staff admin check failed for %d: %s", user_id, admin)
-        admin = False
-    return owner or admin
+    """Return True if user_id is owner or admin.
+
+    Served from the cached effective role (60 s L1 TTL) instead of two
+    uncached ``find_one`` reads. Lookup failures keep the historical
+    contract: log at warning level and return False (callers that need a
+    retry hint on outage should use ``get_effective_role`` directly, as
+    the appeal-review path and the auth decorators do). Cancellation
+    still propagates.
+    """
+    try:
+        role = await get_effective_role(user_id)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        log.warning("is_staff role check failed for %d: %s", user_id, exc)
+        return False
+    return role in ("founder", "admin")
 
 
 async def add_admin(user_id: int, promoted_by: int) -> None:

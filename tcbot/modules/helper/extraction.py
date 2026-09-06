@@ -28,6 +28,12 @@ _GET_CHAT_TIMEOUT = TELEGRAM_LOOKUP_TIMEOUT
 # * Overall deadline for the per-group get_chat_member sweep in
 # * resolve_user_identity: bounds latency on large federations.
 _RESOLVE_SWEEP_TIMEOUT = 15.0
+# * Upper bound for concurrent get_chat_member probes during the sweep.
+# * Matches the fan_out Telegram cap; keeps the burst bounded while cutting
+# * the sequential worst case (one 3 s probe per group) down to roughly one
+# * probe batch. Probes never touch the Telegram circuit breaker: a timeout
+# * here is only an identity miss, not congestion evidence.
+_RESOLVE_SWEEP_CONCURRENCY = 10
 # * Maximum age of a cached identity before detail views re-verify it
 # * live. Harvest writes on every observed message keep active users far
 # * below this; it only bites for silent users (banned, lurkers).
@@ -193,8 +199,11 @@ async def _fetch_live_identity(
 
     Tries one bounded ``get_chat`` call, then walks the connected groups
     with ``get_chat_member`` (which returns full ``User`` objects even for
-    kicked users). Returns ``None`` when nothing resolves. The sweep is
-    bounded by ``_RESOLVE_SWEEP_TIMEOUT``.
+    kicked users). Group probes run concurrently (bounded by
+    ``_RESOLVE_SWEEP_CONCURRENCY``) and the first hit in group order wins;
+    every probe returns the same Telegram user triple, so parallelism only
+    changes latency, not the result. Returns ``None`` when nothing resolves.
+    The sweep is bounded by ``_RESOLVE_SWEEP_TIMEOUT``.
 
     Honest limitation: the Bot API cannot enumerate group members, so
     "fetch every member" is impossible; unknown users resolve per-ID
@@ -217,37 +226,57 @@ async def _fetch_live_identity(
 
     if not fname:
         groups = await db.groups_db.active_groups()
+        sem = asyncio.Semaphore(_RESOLVE_SWEEP_CONCURRENCY)
+
+        async def _probe(
+            grp: Mapping[str, object],
+        ) -> tuple[str, str | None, str | None] | BaseException | None:
+            raw_id = grp.get("chat_id")
+            if not isinstance(raw_id, int) or not raw_id:
+                return None
+            chat_id: int = raw_id
+            try:
+                async with sem:
+                    member = await asyncio.wait_for(
+                        bot.get_chat_member(chat_id, target_id),
+                        timeout=_GET_CHAT_TIMEOUT,
+                    )
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                log.debug(
+                    "get_chat_member(%s, %s) failed: %s",
+                    chat_id,
+                    target_id,
+                    exc,
+                )
+                return None
+            user = getattr(member, "user", None)
+            if user is None:
+                return None
+            if user.is_bot or not user.first_name:
+                return None
+            return user.first_name, user.username, user.last_name
+
         try:
             async with asyncio.timeout(_RESOLVE_SWEEP_TIMEOUT):
-                for grp in groups:
-                    chat_id = grp.get("chat_id")
-                    if not chat_id:
-                        continue
-                    try:
-                        member = await asyncio.wait_for(
-                            bot.get_chat_member(chat_id, target_id),
-                            timeout=_GET_CHAT_TIMEOUT,
-                        )
-                    except Exception as exc:
-                        log.debug(
-                            "get_chat_member(%s, %s) failed: %s",
-                            chat_id,
-                            target_id,
-                            exc,
-                        )
-                        continue
-                    user = getattr(member, "user", None)
-                    if user is None:
-                        continue
-                    if user.is_bot or not user.first_name:
-                        continue
-                    return user.first_name, user.username, user.last_name
+                probed = await asyncio.gather(
+                    *(_probe(grp) for grp in groups), return_exceptions=True
+                )
         except TimeoutError:
             log.debug(
                 "get_chat_member sweep timed out for target=%d after %ds",
                 target_id,
                 _RESOLVE_SWEEP_TIMEOUT,
             )
+            return None
+        for result in probed:
+            if isinstance(result, asyncio.CancelledError):
+                raise result
+            if isinstance(result, BaseException):
+                continue
+            if result is not None:
+                return result
 
     if not fname:
         return None

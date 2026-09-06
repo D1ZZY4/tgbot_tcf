@@ -25,6 +25,16 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 - **Ave Studio renamed to Ave Labs**: copyright holder renamed across all Python module headers, `LICENSE`, the `README.md` license line, and the `code-style.md` example header. No behavior change.
 
+- **Cached auth reads on hot paths** (`tcbot/database/users_roles.py`, `tcbot/modules/helper/decorators.py`): `is_owner` now resolves via the cached owner ID (300 s TTL, invalidated on transfer) and `is_staff` via the cached effective role (60 s TTL) instead of one/two uncached reads per call. `owner_only` uses the cached owner ID and `staff_only` uses the cached effective role with the same fail-closed retry reply, so repeated Founder/staff checks cost zero MongoDB round trips on cache hits. Rank semantics unchanged.
+
+- **Bounded Redis latency on hot paths** (`tcbot/database/cache.py`, `tcbot/modules/helper/decorators.py`): the L2 `GET` in `get_or_fetch` now times out after 1.0 s and the rate-limiter `EVAL` after 1.5 s, falling through to the DB fetch and the local bucket respectively. A stalled Redis no longer holds commands, callbacks, or cache misses for the full socket timeout. No latency promise: bounds only, workload still depends on MongoDB, Telegram, and network.
+
+- **Parallel identity sweep for unknown users** (`tcbot/modules/helper/extraction.py`): `_fetch_live_identity` probes connected groups concurrently (semaphore 10, overall 15 s deadline) instead of one 3 s probe at a time; the first hit in group order wins, which is result-identical because every probe returns the same Telegram user triple. Per-probe failures still log at debug and probes never touch the Telegram circuit breaker.
+
+- **Stable-ID ban detail without full-list rescan** (`tcbot/modules/helper/workflows/stats_flow.py`): `ban_detail` with a stable ban ID fetches the record directly via `get_ban` (one indexed read, immune to list shifts between render and tap); missing or inactive records still report not-found. Buttons without the stable segment keep the legacy list-index lookup, with its now-unreachable stable check removed.
+
+- **Bounded batch-join handling** (`tcbot/modules/greeting.py`): `on_new_member` processes invite-link batches through a semaphore (10 concurrent) instead of unbounded `gather`, bounding MongoDB pool pressure and Telegram bursts. Per-member failures stay isolated via `return_exceptions=True`.
+
 ### Documentation
 
 - **README rewrite** (`README.md`): replaced the generated-sounding long form (full 25-row config table, per-workflow CI detail, mermaid diagram, repo tree, 11-link index) with a concise engineer-facing version: one-line value proposition, requirements, copy-paste quick start, six concrete feature bullets with real command names, required-only config table with a pointer to `config.env.example` and the setup guide, short run/deploy/health sections, full validation block, and six curated doc links. All claims verified against `pyproject.toml`, `config.env.example`, `docker-compose.yml`, `tcbot/alive.py`, and the command modules. No behavior change.
@@ -122,6 +132,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 - **Appeal total-delivery-failure retry in place** (`tcbot/modules/helper/workflows/appeal_flow.py`): when both the review post and the log post failed, the handler returned `ConversationHandler.END` while keeping conversation keys, so "try again" had no in-place path. It now stays in `WAITING_APPEAL` with state intact.
 
 - **Appeal approval notification visibility** (`tcbot/modules/helper/workflows/appeal_flow.py`): the approve fan-out (user DM, card edit, log update, unban log) swallowed every failure while the reject path inspected each; failures are now logged per channel (warning level, error for the unban log). Submit-time instruction-edit and user-cache writes are logged the same way instead of being discarded.
+
+- **Staff-guard outage reply honesty** (`tcbot/modules/helper/decorators.py`): `staff_only` used `is_staff`, which coerces lookup failures to `False`, so a database outage replied with a false "Staff and Founder only" denial. It now reads the cached effective role like `mod_only`/`basic_mod_only` and the appeal-review path (which documents the same "propagate, then retry hint" rationale), so outages get the retry text. Fail-closed behavior preserved; `is_staff` keeps its historical coerce-to-False contract for its remaining callers.
 
 ## [6.5.0] - 2026-09-06
 

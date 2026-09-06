@@ -32,6 +32,13 @@ if TYPE_CHECKING:
 
 log = logging.getLogger(__name__)
 
+# * Upper bound for concurrent per-member join handling (batch invite-link
+# * joins). Each member costs one harvest write plus ban/mute reads and a
+# * Telegram enforcement call; unbounded gather() on a large batch would
+# * spike MongoDB pool pressure (pool max 20) and Telegram burst traffic.
+# * Matches the fan_out Telegram cap; members beyond the bound wait.
+_MAX_CONCURRENT_JOINS: int = 10
+
 
 # ───────────────────────── Member Handlers ──────────────────────── #
 
@@ -232,12 +239,18 @@ async def on_new_member(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         if not connected:
             return
 
-    # * Process all new members concurrently; handles batch joins via invite links
+    # * Process all new members concurrently but bounded; handles batch
+    # * joins via invite links without exhausting the MongoDB pool or
+    # * bursting Telegram traffic. Failures stay per-member via
+    # * return_exceptions=True, as before.
+    _join_sem = asyncio.Semaphore(_MAX_CONCURRENT_JOINS)
+
+    async def _bounded(m: User) -> None:
+        async with _join_sem:
+            await _handle_member(m, msg, chat, ctx.bot, greet=is_primary)
+
     await asyncio.gather(
-        *[
-            _handle_member(m, msg, chat, ctx.bot, greet=is_primary)
-            for m in msg.new_chat_members
-        ],
+        *[_bounded(m) for m in msg.new_chat_members],
         return_exceptions=True,
     )
 
