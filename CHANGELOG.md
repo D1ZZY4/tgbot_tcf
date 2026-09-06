@@ -33,6 +33,8 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ### Fixed
 
+- **Check profile renders Unknown on lookup failure** (`tcbot/modules/helper/workflows/check_flow.py`): DB exceptions coerced to `None`/`0`, so during an outage the profile showed "Active Ban: No" and zero counts for a banned user. Ban/mute reads now render "Unknown (lookup failed)" and a caveat line is appended when any counter failed, so operators retry instead of trusting the card. Success-path rendering unchanged.
+
 - **Checkme dead detail path removed** (`tcbot/modules/checking.py`): `cmd_checkme` carried a second ban-detail block after `if not ban: return` that could never execute (the active-ban branch above always returns), including a latent `ban.get` on a proven-`None` value. Removed; the live clean reply for non-staff, non-banned callers is preserved verbatim. The banned path now passes `admin_fname=None` so `_ban_summary` uses the cached banning-admin name instead of the hardcoded `"Admin"` literal.
 
 - **Promotion-request fail-closed on lookup outage** (`tcbot/modules/admins.py`): `cmd_promote_request` coerced both role and pending-request lookup failures to `None` and proceeded, letting an already-staff user re-request and duplicating the queue during a DB blip. Both lookups now fail closed with the existing retry reply (mirroring `cmd_promote`/`cmd_demote`); `CancelledError` still propagates.

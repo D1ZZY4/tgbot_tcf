@@ -1,6 +1,6 @@
 # © Copyright 2024 - 2026 Transsion Core
 # © Copyright 2024 - 2026 Dizzy
-# © Copyright 2026 Ave Studio
+# © Copyright 2026 Ave Labs
 
 """Comprehensive user-profile view for /check: bans, warns, kicks, mutes, appeals."""
 
@@ -112,10 +112,11 @@ class Check:
         )
         r_user_info = _results[0]
         r_role_meta = _results[1]
-        active_ban = _results[2] if not isinstance(_results[2], BaseException) else None
-        active_mute = (
-            _results[3] if not isinstance(_results[3], BaseException) else None
-        )
+        ban_failed = isinstance(_results[2], BaseException)
+        mute_failed = isinstance(_results[3], BaseException)
+        counts_failed = any(isinstance(r, BaseException) for r in _results[4:11])
+        active_ban = _results[2] if not ban_failed else None
+        active_mute = _results[3] if not mute_failed else None
         ban_total = _results[4] if not isinstance(_results[4], BaseException) else 0
         appeal_total = _results[5] if not isinstance(_results[5], BaseException) else 0
         warn_total = _results[6] if not isinstance(_results[6], BaseException) else 0
@@ -149,12 +150,20 @@ class Check:
         )
         uname_part = f"@{esc(uname or '')}" if uname else "(none)"
         active_ban_doc = cast("BanDoc | None", active_ban)
-        active_part = (
-            f"Yes ({code(active_ban_doc.get('ban_id', '') if isinstance(active_ban_doc, dict) else '')})"
-            if active_ban_doc
-            else "No"
-        )
-        active_mute_part = "Yes" if active_mute else "No"
+        # * Never render a clean bill of health from a failed read: during a
+        # * DB outage the lookups above coerce to None/0, which would show
+        # * "Active Ban: No" and zero counts for a banned user. Surface
+        # * Unknown instead so operators retry rather than trust the card.
+        if ban_failed:
+            active_part = "Unknown (lookup failed - retry in a moment)"
+        elif active_ban_doc:
+            active_part = f"Yes ({code(active_ban_doc.get('ban_id', '') if isinstance(active_ban_doc, dict) else '')})"
+        else:
+            active_part = "No"
+        if mute_failed:
+            active_mute_part = "Unknown (lookup failed - retry in a moment)"
+        else:
+            active_mute_part = "Yes" if active_mute else "No"
 
         # * Build the rich role line with assignment metadata where available.
         role_lines = [f"Role: {bold(role_label)}"]
@@ -181,6 +190,11 @@ class Check:
             f"Mutes: {mute_total}\n"
             f"Appeals: {appeal_total}"
         )
+        if counts_failed:
+            text += (
+                "\n\nNote: some counters could not be loaded; "
+                "totals above may be incomplete."
+            )
 
         rows: list[list[InlineKeyboardButton]] = []
         rows.append(
