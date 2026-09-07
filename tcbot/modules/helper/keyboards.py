@@ -220,11 +220,31 @@ def main_menu_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("About", callback_data="about_menu"),
-                InlineKeyboardButton("Help", callback_data="help_menu"),
+                InlineKeyboardButton(
+                    "About",
+                    callback_data="about_menu",
+                    style=KeyboardButtonStyle.PRIMARY,
+                ),
+                InlineKeyboardButton(
+                    "Help",
+                    callback_data="help_menu",
+                    style=KeyboardButtonStyle.PRIMARY,
+                ),
             ],
-            [InlineKeyboardButton("Additional", callback_data="additional_menu")],
-            [InlineKeyboardButton("Privacy", callback_data="privacy_menu")],
+            [
+                InlineKeyboardButton(
+                    "Additional",
+                    callback_data="additional_menu",
+                    style=KeyboardButtonStyle.PRIMARY,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "Privacy",
+                    callback_data="privacy_menu",
+                    style=KeyboardButtonStyle.PRIMARY,
+                )
+            ],
         ]
     )
 
@@ -238,36 +258,52 @@ def group_start_kb(bot_username: str) -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     "Open in PM",
                     url=f"https://t.me/{bot_username}?start=menu",
+                    style=KeyboardButtonStyle.PRIMARY,
                 )
             ]
         )
-    rows.append([InlineKeyboardButton("Help", callback_data="help_menu_group")])
+    rows.append(
+        [
+            InlineKeyboardButton(
+                "Help",
+                callback_data="help_menu_group",
+                style=KeyboardButtonStyle.PRIMARY,
+            )
+        ]
+    )
     return InlineKeyboardMarkup(rows)
 
 
 def _build_topic_rows(
     topics: list[tuple[str, str]],
+    *,
+    style: KeyboardButtonStyle | None = None,
 ) -> list[list[InlineKeyboardButton]]:
     """Pair topics into two-column rows, with any odd item on its own row."""
     rows: list[list[InlineKeyboardButton]] = []
     for i in range(0, len(topics), 2):
         chunk = topics[i : i + 2]
         rows.append(
-            [InlineKeyboardButton(text, callback_data=cb) for text, cb in chunk]
+            [
+                InlineKeyboardButton(text, callback_data=cb, style=style)
+                for text, cb in chunk
+            ]
         )
     return rows
 
 
 def help_topics_menu_kb(topics: list[tuple[str, str]]) -> InlineKeyboardMarkup:
     """Help index when reached via the start menu - includes « Back to start."""
-    rows = _build_topic_rows(topics)
+    rows = _build_topic_rows(topics, style=KeyboardButtonStyle.PRIMARY)
     rows.append([InlineKeyboardButton("« Back", callback_data="back_to_start")])
     return InlineKeyboardMarkup(rows)
 
 
 def help_topics_kb(topics: list[tuple[str, str]]) -> InlineKeyboardMarkup:
     """Help index when reached via /help command (PM or group) - no back to start."""
-    return InlineKeyboardMarkup(_build_topic_rows(topics))
+    return InlineKeyboardMarkup(
+        _build_topic_rows(topics, style=KeyboardButtonStyle.PRIMARY)
+    )
 
 
 def back_to_start_kb() -> InlineKeyboardMarkup:
@@ -309,7 +345,9 @@ def privacy_kb() -> InlineKeyboardMarkup:
         [
             [
                 InlineKeyboardButton(
-                    "Privacy Policy", callback_data="privacy_policy_menu"
+                    "Privacy Policy",
+                    callback_data="privacy_policy_menu",
+                    style=KeyboardButtonStyle.PRIMARY,
                 )
             ],
             [InlineKeyboardButton("« Back", callback_data="back_to_start")],
@@ -322,7 +360,7 @@ def privacy_policy_sections_kb(section_labels: list[str]) -> InlineKeyboardMarku
     pairs: list[tuple[str, str]] = [
         (label, f"privacy_section_{idx}") for idx, label in enumerate(section_labels)
     ]
-    rows = _build_topic_rows(pairs)
+    rows = _build_topic_rows(pairs, style=KeyboardButtonStyle.PRIMARY)
     rows.append([InlineKeyboardButton("« Back", callback_data="privacy_menu")])
     return InlineKeyboardMarkup(rows)
 
@@ -351,18 +389,38 @@ def additional_menu_kb() -> InlineKeyboardMarkup:
     channel_url = _https_url(cfg.community_channel_url, "channel")
     group_url = _https_url(cfg.community_group_url, "group")
     channel_btn = (
-        InlineKeyboardButton("Main Channel", url=channel_url) if channel_url else None
+        InlineKeyboardButton(
+            "Main Channel", url=channel_url, style=KeyboardButtonStyle.PRIMARY
+        )
+        if channel_url
+        else None
     )
     group_btn = (
-        InlineKeyboardButton("Discussion Group", url=group_url) if group_url else None
+        InlineKeyboardButton(
+            "Discussion Group", url=group_url, style=KeyboardButtonStyle.PRIMARY
+        )
+        if group_url
+        else None
     )
     if channel_btn or group_btn:
         rows.append([b for b in (channel_btn, group_btn) if b is not None])
 
     logs_url = _https_url(cfg.community_logs_url, "logs")
     exec_url = _https_url(cfg.community_exec_url, "exec")
-    logs_btn = InlineKeyboardButton("Logs Channel", url=logs_url) if logs_url else None
-    exec_btn = InlineKeyboardButton("Exec Group", url=exec_url) if exec_url else None
+    logs_btn = (
+        InlineKeyboardButton(
+            "Logs Channel", url=logs_url, style=KeyboardButtonStyle.PRIMARY
+        )
+        if logs_url
+        else None
+    )
+    exec_btn = (
+        InlineKeyboardButton(
+            "Exec Group", url=exec_url, style=KeyboardButtonStyle.PRIMARY
+        )
+        if exec_url
+        else None
+    )
     if logs_btn or exec_btn:
         rows.append([b for b in (logs_btn, exec_btn) if b is not None])
 
@@ -373,6 +431,7 @@ def additional_menu_kb() -> InlineKeyboardMarkup:
                 InlineKeyboardButton(
                     "TRAVEL - Transsion Development (Community)",
                     url=travel_url,
+                    style=KeyboardButtonStyle.PRIMARY,
                 )
             ]
         )
@@ -386,6 +445,7 @@ def groups_menu_kb(*, detailed: bool) -> InlineKeyboardMarkup:
     toggle = InlineKeyboardButton(
         "Simple" if detailed else "Details",
         callback_data="menu_groups_simple" if detailed else "menu_groups_details",
+        style=KeyboardButtonStyle.PRIMARY,
     )
     back = InlineKeyboardButton("« Back", callback_data="back_to_start")
     return InlineKeyboardMarkup([[toggle, back]])
@@ -395,7 +455,17 @@ def tcgroups_kb(*, detailed: bool) -> InlineKeyboardMarkup:
     """Toggle keyboard for the /tcgroups command: Simple/Details switch."""
     label = "Simple" if detailed else "Details"
     callback = "groups_simple" if detailed else "groups_details"
-    return InlineKeyboardMarkup([[InlineKeyboardButton(label, callback_data=callback)]])
+    return InlineKeyboardMarkup(
+        [
+            [
+                InlineKeyboardButton(
+                    label,
+                    callback_data=callback,
+                    style=KeyboardButtonStyle.PRIMARY,
+                )
+            ]
+        ]
+    )
 
 
 # ───────────────────── Module help sub-menu ─────────────────────── #
@@ -406,7 +476,7 @@ def module_help_kb(
     back_callback: str,
 ) -> InlineKeyboardMarkup:
     """Per-module help view: pair sub-section buttons + Back, with Back last."""
-    rows = _build_topic_rows(section_buttons)
+    rows = _build_topic_rows(section_buttons, style=KeyboardButtonStyle.PRIMARY)
     rows.append([InlineKeyboardButton("« Back", callback_data=back_callback)])
     return InlineKeyboardMarkup(rows)
 
