@@ -4,6 +4,18 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ## [Unreleased]
 
+### Changed
+
+- **Shared appeal gates plus parallel reject writes** (`tcbot/modules/helper/workflows/appeal_flow.py`): the stale-review, rejection-cooldown, and conversation-state-clear blocks were triplicated across `_start` and `_on_message`; they now go through `_is_stale_review`, `_cooldown_remaining_h`, and `_clear_appeal_state` (one key tuple, identical replies and windows). Rejection resolves the display name in parallel with `set_rejected_by` (cooldown-before-clear ordering preserved) instead of paying one extra serial DB round trip. No success-path behavior change.
+
+### Fixed
+
+- **Cancelled appeal reads no longer destroy the review card** (`tcbot/modules/helper/workflows/appeal_flow.py`): a cancelled `get_ban` in `on_decision` was coerced into the "Ban record not found" card edit and a cancelled `q.answer` was discarded; a cancelled deactivation in `_approve_appeal` was coerced into the DB-fail card edit. Cancellation now propagates with the shared card untouched so a re-tap retries the full sequence. The approve display-name fallback still proceeds to fan-out (enforcement already committed), and post-commit notify sends keep the swallow-plus-log convention.
+
+### Documentation
+
+- **Appeal doc sync** (`docs/features/appeals.md`, `docs/architecture/workflows.md`): removed the duplicated approval sentence; rejection steps now state the parallel cooldown-write plus name-read and the parallel DM/edit/clear batch; workflows appeal bullet notes the cancel-propagates contract; behavior reference gains the shared-gate bullet.
+
 ## [6.5.1] - 2026-09-07
 
 <details>

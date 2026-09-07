@@ -203,21 +203,18 @@ Each notification in steps 5-8 is inspected separately and logged (warning for t
 
 Approval is a federation unban. It removes the Telegram ban across all connected groups and deactivates the persistent ban record. It runs its own inline deactivate-plus-fan-out sequence that mirrors `execute_unban`; it does not call `execute_unban` directly.
 
-Approval is a federation unban. It removes the Telegram ban across all connected groups and deactivates the persistent ban record.
-
 ## Rejection behavior
 
 When a staff member rejects an appeal:
 
-1. `bans_db.set_rejected_by(ban_id, admin.id, admin.first_name)` records the rejector's identity (`rejected_by_id`, `rejected_by_name`, `rejected_at`) first and alone, so the 24-hour cooldown holds even if a later write fails.
+1. `bans_db.set_rejected_by(ban_id, admin.id, admin.first_name)` records the rejector's identity (`rejected_by_id`, `rejected_by_name`, `rejected_at`) in parallel with the target display-name read, so the 24-hour cooldown holds even if a later write fails while saving one DB round trip.
 2. The ban remains active.
 3. The user receives a DM telling them the appeal was reviewed and not approved.
 4. The review message is edited to show who rejected it and the inline keyboard is removed.
 5. `bans_db.clear_review(ban_id)` clears `review_message_id` and `review_timestamp` so the user can submit a new appeal after the cooldown.
 6. The submitted-appeal log message is edited to a rejected version when possible.
 
-Steps 3-5 run in a single `asyncio.gather` (after the target display name
-is resolved) so a DM failure does not block the review-message edit or the
+Steps 3-5 run in a single `asyncio.gather` so a DM failure does not block the review-message edit or the
 DB writes. Each side effect is inspected: a failed DM logs at warning level,
 a failed card edit at debug level, and a failed `clear_review` at error
 level (the pending review would still be in the database).
@@ -307,3 +304,4 @@ Important appeal behaviors to keep in mind:
 14. Non-deciding taps (outsiders, locked-out reviewers, repeat taps, outage retries) never edit the review card.
 15. Concurrent duplicate submits are resolved by an atomic review-slot claim; the loser is told the appeal is pending.
 16. A total delivery failure keeps the conversation open for an in-place retry.
+17. Cancelled review reads and cancelled deactivation writes propagate with the card untouched (a retry re-drives the full sequence); the shared stale-review, cooldown, and state-clear gates live in `_is_stale_review`, `_cooldown_remaining_h`, and `_clear_appeal_state` so submit and resubmit cannot drift.

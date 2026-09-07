@@ -107,6 +107,40 @@ def text_references_log_message(text: str, msg_id: int) -> bool:
     return bool(re.search(rf"\b{msg_id}\b", text))
 
 
+# * Conversation keys shared by every appeal exit path. One tuple so a
+# * future key cannot be cleared in _start and leak in _on_message.
+_APPEAL_STATE_KEYS: tuple[str, ...] = (
+    "appeal_ban_id",
+    "appeal_log_msg_id",
+    "appeal_instruction_msg_id",
+)
+
+
+def _clear_appeal_state(user_data: dict[str, object] | None) -> None:
+    """Remove appeal conversation keys so retries start clean."""
+    if not user_data:
+        return
+    for key in _APPEAL_STATE_KEYS:
+        user_data.pop(key, None)
+
+
+def _is_stale_review(review_ts: datetime | None) -> bool:
+    """Return True when a stored review no longer blocks a new appeal."""
+    return review_ts is None or (to_utc(review_ts) < utc_now() - _STALE_REVIEW_WINDOW)
+
+
+def _cooldown_remaining_h(rejected_at: datetime | None) -> int | None:
+    """Return remaining whole hours plus one inside the rejection cooldown, else None."""
+    if rejected_at is None:
+        return None
+    elapsed = utc_now() - to_utc(rejected_at)
+    if elapsed < timedelta(0):
+        elapsed = timedelta(0)
+    if elapsed >= _REJECTION_COOLDOWN:
+        return None
+    return int((_REJECTION_COOLDOWN - elapsed).total_seconds() / _SECONDS_PER_HOUR) + 1
+
+
 @dataclass(frozen=True)
 class BuildAppeal:
     """Configurable appeal ConversationHandler builder."""
@@ -233,10 +267,7 @@ class BuildAppeal:
             return ConversationHandler.END
 
         if ban.get("review_message_id"):
-            review_ts = ban.get("review_timestamp")
-            stale = review_ts is None or (
-                to_utc(review_ts) < utc_now() - _STALE_REVIEW_WINDOW
-            )
+            stale = _is_stale_review(ban.get("review_timestamp"))
             if stale:
                 # * Review card is older than _STALE_REVIEW_HOURS (message may have been
                 # * deleted from the discussion topic or staff never acted).  Clear the
@@ -258,7 +289,7 @@ class BuildAppeal:
                     " (review_ts=%s)",
                     ban_id,
                     uid,
-                    review_ts,
+                    ban.get("review_timestamp"),
                 )
             else:
                 try:
@@ -269,26 +300,15 @@ class BuildAppeal:
                     )
                 return ConversationHandler.END
 
-        rejected_at = ban.get("rejected_at")
-        if rejected_at is not None:
-            elapsed = utc_now() - to_utc(rejected_at)
-            if elapsed < timedelta(0):
-                elapsed = timedelta(0)
-            if elapsed < _REJECTION_COOLDOWN:
-                remaining_h = (
-                    int(
-                        (_REJECTION_COOLDOWN - elapsed).total_seconds()
-                        / _SECONDS_PER_HOUR
-                    )
-                    + 1
+        remaining_h = _cooldown_remaining_h(ban.get("rejected_at"))
+        if remaining_h is not None:
+            try:
+                await msg.reply_text(
+                    f"{_ERR_REJECTION_COOLDOWN} ({remaining_h}h remaining)"
                 )
-                try:
-                    await msg.reply_text(
-                        f"{_ERR_REJECTION_COOLDOWN} ({remaining_h}h remaining)"
-                    )
-                except Exception as exc:
-                    log.debug("Appeal cooldown reply failed for user %d: %s", uid, exc)
-                return ConversationHandler.END
+            except Exception as exc:
+                log.debug("Appeal cooldown reply failed for user %d: %s", uid, exc)
+            return ConversationHandler.END
 
         if ctx.user_data is None:
             log.error("ctx.user_data is None in appeal_flow _start")
@@ -308,8 +328,7 @@ class BuildAppeal:
             log.debug("Appeal instruction send failed for user %d: %s", uid, exc)
             # * Clear keys set above so user_data does not contain stale appeal state
             # * if the user retries later or starts a different conversation.
-            ctx.user_data.pop("appeal_ban_id", None)
-            ctx.user_data.pop("appeal_log_msg_id", None)
+            _clear_appeal_state(ctx.user_data)
             return ConversationHandler.END
 
         return WAITING_APPEAL
@@ -332,13 +351,7 @@ class BuildAppeal:
         if q is None:
             return ConversationHandler.END
 
-        if ctx.user_data is not None:
-            for key in (
-                "appeal_ban_id",
-                "appeal_log_msg_id",
-                "appeal_instruction_msg_id",
-            ):
-                ctx.user_data.pop(key, None)
+        _clear_appeal_state(ctx.user_data)
 
         # * Answer before the visible edit so the client spinner clears
         # * first; mirrors ban_flow.on_cancel_proof sequential ordering.
@@ -354,13 +367,7 @@ class BuildAppeal:
 
     async def _end(self, update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         """Fallback handler; fires on any unrecognised command during the flow."""
-        if ctx.user_data is not None:
-            for key in (
-                "appeal_ban_id",
-                "appeal_log_msg_id",
-                "appeal_instruction_msg_id",
-            ):
-                ctx.user_data.pop(key, None)
+        _clear_appeal_state(ctx.user_data)
         msg = update.effective_message
         if msg:
             try:
@@ -422,12 +429,7 @@ class BuildAppeal:
                 await msg.reply_text(_ERR_SESSION_EXPIRED)
             except Exception as exc:
                 log.debug("Appeal _on_message expired-ban reply failed: %s", exc)
-            for key in (
-                "appeal_ban_id",
-                "appeal_log_msg_id",
-                "appeal_instruction_msg_id",
-            ):
-                ctx.user_data.pop(key, None)
+            _clear_appeal_state(ctx.user_data)
             return ConversationHandler.END
 
         # * Re-check the pending-review and rejection-cooldown gates from
@@ -436,11 +438,7 @@ class BuildAppeal:
         # * for the user to type. Submitting anyway would orphan a review
         # * card or bypass the cooldown.
         if fresh_ban.get("review_message_id"):
-            review_ts = fresh_ban.get("review_timestamp")
-            stale = review_ts is None or (
-                to_utc(review_ts) < utc_now() - _STALE_REVIEW_WINDOW
-            )
-            if stale:
+            if _is_stale_review(fresh_ban.get("review_timestamp")):
                 try:
                     await db.bans_db.clear_review(ban_id)
                 except Exception:
@@ -453,52 +451,26 @@ class BuildAppeal:
                     )
                     with contextlib.suppress(Exception):
                         await msg.reply_text(_ERR_PENDING_REVIEW)
-                    for key in (
-                        "appeal_ban_id",
-                        "appeal_log_msg_id",
-                        "appeal_instruction_msg_id",
-                    ):
-                        ctx.user_data.pop(key, None)
+                    _clear_appeal_state(ctx.user_data)
                     return ConversationHandler.END
             else:
                 try:
                     await msg.reply_text(_ERR_PENDING_REVIEW)
                 except Exception as exc:
                     log.debug("Appeal _on_message pending-review reply failed: %s", exc)
-                for key in (
-                    "appeal_ban_id",
-                    "appeal_log_msg_id",
-                    "appeal_instruction_msg_id",
-                ):
-                    ctx.user_data.pop(key, None)
+                _clear_appeal_state(ctx.user_data)
                 return ConversationHandler.END
 
-        rejected_at = fresh_ban.get("rejected_at")
-        if rejected_at is not None:
-            elapsed = utc_now() - to_utc(rejected_at)
-            if elapsed < timedelta(0):
-                elapsed = timedelta(0)
-            if elapsed < _REJECTION_COOLDOWN:
-                remaining_h = (
-                    int(
-                        (_REJECTION_COOLDOWN - elapsed).total_seconds()
-                        / _SECONDS_PER_HOUR
-                    )
-                    + 1
+        remaining_h = _cooldown_remaining_h(fresh_ban.get("rejected_at"))
+        if remaining_h is not None:
+            try:
+                await msg.reply_text(
+                    f"{_ERR_REJECTION_COOLDOWN} ({remaining_h}h remaining)"
                 )
-                try:
-                    await msg.reply_text(
-                        f"{_ERR_REJECTION_COOLDOWN} ({remaining_h}h remaining)"
-                    )
-                except Exception as exc:
-                    log.debug("Appeal _on_message cooldown reply failed: %s", exc)
-                for key in (
-                    "appeal_ban_id",
-                    "appeal_log_msg_id",
-                    "appeal_instruction_msg_id",
-                ):
-                    ctx.user_data.pop(key, None)
-                return ConversationHandler.END
+            except Exception as exc:
+                log.debug("Appeal _on_message cooldown reply failed: %s", exc)
+            _clear_appeal_state(ctx.user_data)
+            return ConversationHandler.END
 
         if not log_msg_id:
             log_msg_id = fresh_ban.get("log_message_id", 0)
@@ -512,12 +484,7 @@ class BuildAppeal:
 
         user = update.effective_user
         if user is None:
-            for key in (
-                "appeal_ban_id",
-                "appeal_log_msg_id",
-                "appeal_instruction_msg_id",
-            ):
-                ctx.user_data.pop(key, None)
+            _clear_appeal_state(ctx.user_data)
             return ConversationHandler.END
 
         uid = user.id
@@ -605,12 +572,7 @@ class BuildAppeal:
                     await msg.reply_text(_ERR_PENDING_REVIEW)
                 except Exception as exc:
                     log.debug("Appeal race-loser reply failed: %s", exc)
-                for key in (
-                    "appeal_ban_id",
-                    "appeal_log_msg_id",
-                    "appeal_instruction_msg_id",
-                ):
-                    ctx.user_data.pop(key, None)
+                _clear_appeal_state(ctx.user_data)
                 return ConversationHandler.END
         if appeal_log_sent_id and ban_id:
             try:
@@ -684,12 +646,7 @@ class BuildAppeal:
             return WAITING_APPEAL
 
         # * Clear appeal keys so user_data is clean after successful submission.
-        for key in (
-            "appeal_ban_id",
-            "appeal_log_msg_id",
-            "appeal_instruction_msg_id",
-        ):
-            ctx.user_data.pop(key, None)
+        _clear_appeal_state(ctx.user_data)
 
         return ConversationHandler.END
 
@@ -729,15 +686,24 @@ class BuildAppeal:
         # * get_effective_role (not is_staff) is used so a database outage
         # * surfaces as an exception and gets a retry hint instead of being
         # * coerced to False and misreported as "not authorized".
-        role_result, ban_result, _ = await asyncio.gather(
+        role_result, ban_result, answer_r = await asyncio.gather(
             db.users_roles.get_effective_role(admin.id),
             db.bans_db.get_ban(ban_id),
             q.answer(),
             return_exceptions=True,
         )
+        # ! CRITICAL: cancellation must never render as a verdict. A cancelled
+        # ! ban read coerced into "not found" would destroy the shared review
+        # ! card on shutdown; a cancelled answer must propagate, not silence.
+        if isinstance(role_result, asyncio.CancelledError):
+            raise role_result
+        if isinstance(ban_result, asyncio.CancelledError):
+            raise ban_result
+        if isinstance(answer_r, asyncio.CancelledError):
+            raise answer_r
+        if isinstance(answer_r, BaseException):
+            log.debug("Appeal decision answer failed: %s", answer_r)
         if isinstance(role_result, BaseException):
-            if isinstance(role_result, asyncio.CancelledError):
-                raise role_result
             log.warning(
                 "Appeal review role lookup failed for %d: %s", admin.id, role_result
             )
@@ -871,6 +837,11 @@ class BuildAppeal:
             db.scheduler.cancel_schedule(f"unban.{ban_id}"),
             return_exceptions=True,
         )
+        # ! CRITICAL: a cancelled deactivation must propagate with the card
+        # ! untouched so a re-tap retries the full sequence. Coercing it
+        # ! into the DB-fail edit below would destroy the actionable card.
+        if isinstance(deactivate_result, asyncio.CancelledError):
+            raise deactivate_result
         if isinstance(deactivate_result, BaseException):
             # * Same trade-off as execute_unban in unban_flow.py: when the
             # * DB deactivation fails we must NOT continue to the fan-out,
@@ -899,6 +870,9 @@ class BuildAppeal:
                 log.debug("approve_appeal DB-fail reply failed: %s", exc)
             return
         if isinstance(target_fname, BaseException):
+            # * Display-only fallback (covers a cancelled name read too):
+            # * enforcement already committed above, so the fan-out below
+            # * must still run rather than abort over a missing name.
             target_fname = str(target_id)
 
         # * Clear the review marker now that the ban is inactive. Without
@@ -1015,22 +989,32 @@ class BuildAppeal:
         lc: int,
         lt: int | None,
     ) -> None:
-        # * The four side-effects (DM, review-card edit, clear_review, audit-log
-        # * record) are independent. Each is captured separately so failures
-        # * are surfaced: a missing DM is a transient Telegram problem; a
-        # * failed clear_review means the user could re-appeal within the
-        # * 72-hour window; a failed set_rejected_by means the audit
-        # * trail is incomplete.
-        # * set_rejected_by runs first and alone: the 24 h cooldown depends
-        # * on rejected_at, so it must land even if the review clear fails.
-        try:
-            await db.bans_db.set_rejected_by(ban_id, admin.id, admin.first_name)
-        except Exception:
+        # * The cooldown write and the display-name read are independent, so
+        # * they run in parallel to save one DB round trip. Ordering against
+        # * clear_review below is preserved: set_rejected_by still lands
+        # * before the DM/edit/clear batch, so the 24 h cooldown holds even
+        # * if the review clear fails. A cancelled cooldown write propagates
+        # * (the decision stays actionable); a cancelled name read falls
+        # * back to the numeric ID so the committed cooldown still notifies.
+        set_r, name_r = await asyncio.gather(
+            db.bans_db.set_rejected_by(ban_id, admin.id, admin.first_name),
+            db.users_cache.get_first_name(target_id, str(target_id)),
+            return_exceptions=True,
+        )
+        if isinstance(set_r, asyncio.CancelledError):
+            raise set_r
+        if isinstance(set_r, BaseException):
             # * Without rejected_at the user may re-appeal immediately; the
             # * ban itself still stands, so this fails safe toward re-review.
             log.exception("reject_appeal set_rejected_by failed for ban %s", ban_id)
+        target_fname: str = (
+            name_r if isinstance(name_r, str) and name_r else str(target_id)
+        )
+        if isinstance(name_r, BaseException) and not isinstance(
+            name_r, asyncio.CancelledError
+        ):
+            log.debug("reject_appeal name fetch failed: %s", name_r)
         results = await asyncio.gather(
-            db.users_cache.get_first_name(target_id, str(target_id)),
             bot.send_message(
                 target_id,
                 f"Your appeal for ban {code(ban_id)} was not approved. "
@@ -1045,12 +1029,11 @@ class BuildAppeal:
             db.bans_db.clear_review(ban_id),
             return_exceptions=True,
         )
-        target_fname_result = results[0]
+        if isinstance(results[0], BaseException):
+            log.warning("reject_appeal DM to %d failed: %s", target_id, results[0])
         if isinstance(results[1], BaseException):
-            log.warning("reject_appeal DM to %d failed: %s", target_id, results[1])
+            log.debug("reject_appeal review-card edit failed: %s", results[1])
         if isinstance(results[2], BaseException):
-            log.debug("reject_appeal review-card edit failed: %s", results[2])
-        if isinstance(results[3], BaseException):
             # * ``clear_review`` failure is more serious: the user could
             # * re-submit an appeal within the 72-hour stale-review window
             # * because the DB still has the pending review. Log loudly.
@@ -1060,11 +1043,6 @@ class BuildAppeal:
                 ban_id,
                 target_id,
             )
-        target_fname = (
-            target_fname_result
-            if not isinstance(target_fname_result, BaseException)
-            else str(target_id)
-        )
 
         await self._update_or_send_log(
             bot,
