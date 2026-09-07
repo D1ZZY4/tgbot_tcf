@@ -36,11 +36,15 @@ A module name is the filename without `.py`, for example `banning` or `stats`.
 
 ## Module contract
 
-Visible help modules expose:
+Visible help modules expose one unified `__help__` entry (see
+[`helpers.md`](helpers.md) for the `HelpEntry` shape):
 
 ```python
-__module_name__ = "Ban"
-__help_text__ = "<b>Commands & Aliases</b>\n..."
+__help__: replies.HelpEntry = {
+    "name": "Ban",
+    "overview": "<b>Commands & Aliases</b>\n...",
+    "sections": [...],
+}
 __handlers__ = [...]
 ```
 

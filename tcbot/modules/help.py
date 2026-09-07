@@ -83,12 +83,13 @@ HELP_CONTENT = _builder_help()
 
 # * Sorted by display name (case-insensitive)
 _TOPICS_SORTED: list[tuple[str, str]] = sorted(
-    ((name, key) for key, (name, _, _) in HELP_CONTENT.items()),
+    ((entry[0], key) for key, entry in HELP_CONTENT.items()),
     key=lambda t: t[0].lower(),
 )
 
-# * Menu-path topics; callback keys stay as "help_<mod>"
-HELP_TOPICS_MENU: list[tuple[str, str]] = _TOPICS_SORTED
+# * Menu-path topics; an explicit copy so a future mutation of one list
+# * cannot silently reshape the other path's keyboard.
+HELP_TOPICS_MENU: list[tuple[str, str]] = list(_TOPICS_SORTED)
 
 # * Command-path topics; callback keys become "helpc_<mod>"
 HELP_TOPICS_CMD: list[tuple[str, str]] = [
@@ -97,10 +98,10 @@ HELP_TOPICS_CMD: list[tuple[str, str]] = [
 
 # * Module name → help key mapping for /help <module> lookup
 _MODULE_NAME_MAP: dict[str, str] = {}
-for _key, (_dname, _, _) in HELP_CONTENT.items():
+for _key, _entry in HELP_CONTENT.items():
     _module_slug = _key[5:]
     _MODULE_NAME_MAP[_module_slug.lower()] = _key
-    _MODULE_NAME_MAP[_dname.lower()] = _key
+    _MODULE_NAME_MAP[_entry[0].lower()] = _key
 
 _CNAME = esc(cfg.community_name)
 
@@ -118,10 +119,12 @@ def _help_index_text(botname: str) -> str:
 # ──────────────────────── Shared Renderers ──────────────────────── #
 
 
-def _prefix_note() -> str:
-    """Return an HTML footer listing every configured command prefix."""
-    codes = " ".join(code(p) for p in cfg.prefixes)
-    return f"\n{bold('Note:')} All commands also work with {codes}"
+# * Command prefixes come from frozen env config and never change at
+# * runtime, so render the footer once (same precedent as _CNAME above)
+# * instead of re-joining it on every module view.
+_PREFIX_NOTE: str = f"\n{bold('Note:')} All commands also work with " + " ".join(
+    code(p) for p in cfg.prefixes
+)
 
 
 def _section_buttons(
@@ -139,7 +142,7 @@ def _section_buttons(
 
 def _module_text(name: str, overview: str) -> str:
     """Compose the module-overview HTML body."""
-    return f"{bold(f'Help for {name}')}\n\n{overview}\n{_prefix_note()}"
+    return f"{bold(f'Help for {name}')}\n\n{overview}\n{_PREFIX_NOTE}"
 
 
 async def _render_help_index(
