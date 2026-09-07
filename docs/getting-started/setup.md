@@ -78,7 +78,7 @@ Docker, Heroku, VPS with systemd, Windows over RDP) live in the collapsible
 
 ### Community links (optional)
 
-The Additional Links menu in the bot start screen shows buttons for community channels, groups, and the TRAVEL community. Each button is shown only when its corresponding env var is set to a non-empty URL. Leave any of these empty to hide that button:
+The Additional Links menu in the bot start screen shows buttons for community channels, groups, and the TRAVEL community. Each button uses its env var when set to a non-empty URL and falls back to the built-in default otherwise, so all five buttons show with zero setup:
 
 | Variable | Button label |
 |---|---|

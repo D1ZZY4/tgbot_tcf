@@ -124,7 +124,7 @@ Chat destinations accept a chat ID or a `chat_id/thread_id` pair.
 
 ### Community links
 
-`COMMUNITY_CHANNEL_URL`, `COMMUNITY_GROUP_URL`, `COMMUNITY_LOGS_URL`, `COMMUNITY_EXEC_URL`, `COMMUNITY_TRAVEL_URL`: each shows one button in the Additional Links menu; empty hides it.
+`COMMUNITY_CHANNEL_URL`, `COMMUNITY_GROUP_URL`, `COMMUNITY_LOGS_URL`, `COMMUNITY_EXEC_URL`, `COMMUNITY_TRAVEL_URL`: each shows one button in the Additional Links menu; a non-empty value overrides the built-in default, empty falls back to it.
 
 </details>
 

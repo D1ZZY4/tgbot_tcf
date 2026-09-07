@@ -30,6 +30,15 @@ _ERR_OWNER_ID: str = "OWNER_ID is required and must be a positive integer."
 # * Replit environment variable that exposes the dev domain (always HTTPS).
 _REPLIT_DEV_DOMAIN_VAR: str = "REPLIT_DEV_DOMAIN"
 
+# * Built-in Additional Links menu URLs. Used when the matching env var is
+# * unset or blank; a non-empty env value always wins. Kept here (not in the
+# * template) so fresh deployments show the community buttons with zero setup.
+_DEFAULT_COMMUNITY_CHANNEL_URL: str = "https://t.me/TranssionCoreFederation"
+_DEFAULT_COMMUNITY_GROUP_URL: str = "https://t.me/TranssionCoreFederationGroup"
+_DEFAULT_COMMUNITY_LOGS_URL: str = "https://t.me/TranssionCoreFederationLogs"
+_DEFAULT_COMMUNITY_EXEC_URL: str = "https://t.me/+A105pfnCvkhiZWM1"
+_DEFAULT_COMMUNITY_TRAVEL_URL: str = "https://t.me/+S2C_ppFvHlAwMzNl"
+
 # ───────────────────────── Config Parsing ───────────────────────── #
 
 
@@ -345,11 +354,26 @@ class Configs:
             webhook_url=_auto_webhook_url(),
             webhook_secret=_resolve_webhook_secret(),
             cron_secret=os.getenv("CRON_SECRET", "").strip(),
-            community_channel_url=os.getenv("COMMUNITY_CHANNEL_URL", "").strip(),
-            community_group_url=os.getenv("COMMUNITY_GROUP_URL", "").strip(),
-            community_logs_url=os.getenv("COMMUNITY_LOGS_URL", "").strip(),
-            community_exec_url=os.getenv("COMMUNITY_EXEC_URL", "").strip(),
-            community_travel_url=os.getenv("COMMUNITY_TRAVEL_URL", "").strip(),
+            community_channel_url=os.getenv(
+                "COMMUNITY_CHANNEL_URL", _DEFAULT_COMMUNITY_CHANNEL_URL
+            ).strip()
+            or _DEFAULT_COMMUNITY_CHANNEL_URL,
+            community_group_url=os.getenv(
+                "COMMUNITY_GROUP_URL", _DEFAULT_COMMUNITY_GROUP_URL
+            ).strip()
+            or _DEFAULT_COMMUNITY_GROUP_URL,
+            community_logs_url=os.getenv(
+                "COMMUNITY_LOGS_URL", _DEFAULT_COMMUNITY_LOGS_URL
+            ).strip()
+            or _DEFAULT_COMMUNITY_LOGS_URL,
+            community_exec_url=os.getenv(
+                "COMMUNITY_EXEC_URL", _DEFAULT_COMMUNITY_EXEC_URL
+            ).strip()
+            or _DEFAULT_COMMUNITY_EXEC_URL,
+            community_travel_url=os.getenv(
+                "COMMUNITY_TRAVEL_URL", _DEFAULT_COMMUNITY_TRAVEL_URL
+            ).strip()
+            or _DEFAULT_COMMUNITY_TRAVEL_URL,
         )
 
 
@@ -577,27 +601,27 @@ class _CfgAdapter:
 
     @property
     def community_channel_url(self) -> str:
-        """Public URL of the main community channel (empty = button not shown)."""
+        """Public URL of the main community channel (built-in default when env is empty)."""
         return self._c.community_channel_url
 
     @property
     def community_group_url(self) -> str:
-        """Public URL of the main community discussion group (empty = button not shown)."""
+        """Public URL of the main community discussion group (built-in default when env is empty)."""
         return self._c.community_group_url
 
     @property
     def community_logs_url(self) -> str:
-        """Public URL of the logs channel (empty = button not shown)."""
+        """Public URL of the logs channel (built-in default when env is empty)."""
         return self._c.community_logs_url
 
     @property
     def community_exec_url(self) -> str:
-        """Public URL or invite link of the exec/staff group (empty = button not shown)."""
+        """Public URL or invite link of the exec/staff group (built-in default when env is empty)."""
         return self._c.community_exec_url
 
     @property
     def community_travel_url(self) -> str:
-        """Public URL or invite link of the TRAVEL community (empty = button not shown)."""
+        """Public URL or invite link of the TRAVEL community (built-in default when env is empty)."""
         return self._c.community_travel_url
 
 

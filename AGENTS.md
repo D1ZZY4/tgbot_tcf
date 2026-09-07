@@ -240,7 +240,7 @@ Important non-secret/runtime variables include:
 - `WARN_LIMIT`: per-group warn threshold that triggers auto-ban; default `3`.
 - `WARN_EXPIRY_DAYS`: days after which warn records expire; default `0` (disabled).
 - `FED_WARN_LIMIT`: federation-wide warn threshold that triggers auto-ban; default `0` (disabled).
-- `COMMUNITY_CHANNEL_URL`, `COMMUNITY_GROUP_URL`, `COMMUNITY_LOGS_URL`, `COMMUNITY_EXEC_URL`, `COMMUNITY_TRAVEL_URL`: optional community links shown in the additional menu.
+- `COMMUNITY_CHANNEL_URL`, `COMMUNITY_GROUP_URL`, `COMMUNITY_LOGS_URL`, `COMMUNITY_EXEC_URL`, `COMMUNITY_TRAVEL_URL`: optional community links shown in the additional menu (built-in defaults apply when empty).
 
 Use `config.env.example` as the complete template.
 
