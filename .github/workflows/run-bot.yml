@@ -97,12 +97,17 @@ jobs:
           set -uo pipefail
 
           start_bot() {
+            # * Background directly in this shell (no command substitution):
+            # * $! stays a real child job, so kill -0 supervises the actual
+            # * process and the shutdown block below can wait for its exit.
+            # * (Capturing via BOT_PID="$(start_bot)" would run this in a
+            # * subshell, leaving wait with a non-child PID that always fails.)
             uv run python -m tcbot > bot.log 2>&1 &
-            echo $!
+            BOT_PID=$!
           }
 
           echo "Starting bot..."
-          BOT_PID="$(start_bot)"
+          start_bot
           echo "Bot started with PID $BOT_PID"
 
           deadline=$(( $(date +%s) + WINDOW_SECONDS ))
@@ -136,7 +141,7 @@ jobs:
               backoff=$((30 * restarts))
               [ "$backoff" -gt 300 ] && backoff=300
               sleep "$backoff"
-              BOT_PID="$(start_bot)"
+              start_bot
               echo "Bot restarted with PID $BOT_PID"
             fi
 
@@ -168,7 +173,19 @@ jobs:
 
           echo "Window elapsed. Stopping bot gracefully..."
           kill "$BOT_PID" 2>/dev/null || true
-          wait "$BOT_PID" 2>/dev/null || true
+          # * Bounded wait for graceful exit (uv forwards SIGTERM to the bot
+          # * child since 0.5.x, and PTB handles it): without this, the
+          # * scrub/upload steps below race the dying process and the
+          # * artifact loses its final lines. 60 s sits far inside the 30 min
+          # * post-window buffer; exceeding it proceeds anyway and the runner
+          # * tears the machine down after the job.
+          for _ in $(seq 1 30); do
+            kill -0 "$BOT_PID" 2>/dev/null || break
+            sleep 2
+          done
+          if kill -0 "$BOT_PID" 2>/dev/null; then
+            echo "::warning::Bot did not exit within 60s of SIGTERM; leaving it for runner teardown."
+          fi
           echo "Bot stopped."
 
       - name: Scrub log of credentials

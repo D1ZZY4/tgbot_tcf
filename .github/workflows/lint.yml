@@ -19,7 +19,7 @@ jobs:
       # Dummy values for the import check: tcbot validates presence and
       # shape at import time but never connects, so no real secrets are
       # needed (and fork PRs have no secrets to inject).
-      BOT_TOKEN: "000000:dummy-token-for-lint"
+      BOT_TOKEN: "000000:dummy-token-for-lint000000000000000"
       MONGODB_URI: "mongodb://localhost:27017"
       OWNER_ID: "1"
 

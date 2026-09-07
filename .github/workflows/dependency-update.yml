@@ -64,7 +64,7 @@ jobs:
       - name: Validate updated dependencies
         if: steps.update.outputs.has_updates == 'true'
         env:
-          BOT_TOKEN: "000000:dummy-token-for-ci"
+          BOT_TOKEN: "000000:dummy-token-for-ci00000000000000000"
           MONGODB_URI: "mongodb://localhost:27017"
           OWNER_ID: "1"
         run: |
