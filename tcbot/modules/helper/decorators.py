@@ -166,6 +166,12 @@ _RL_REDIS_TIMEOUT_S: float = 1.5
 # * Commands : 8 calls per 30 s - comfortable for regular moderation
 _cmd_limiter = _AsyncRateLimiter(max_calls=8, window=30.0, prefix="cmd")
 
+# * Staff commands: 16 calls per 30 s - incident response mixes several
+# * different commands (check, warn, kick, ...) in one burst, so the global
+# * flood ceiling sits roomier for authenticated staff. Per-handler quotas
+# * below still pace each destructive command, so this never loosens those.
+_cmd_staff_limiter = _AsyncRateLimiter(max_calls=16, window=30.0, prefix="cmd_staff")
+
 # * Buttons  : 20 presses per 10 s - allows snappy navigation
 _cbq_limiter = _AsyncRateLimiter(max_calls=20, window=10.0, prefix="cbq")
 
@@ -186,6 +192,33 @@ async def _is_exempt(uid: int) -> bool:
         log.debug("Rate-limit exemption lookup failed for %d: %s", uid, exc)
         return False
     return owner_id is not None and owner_id == uid
+
+
+async def _throttle_tier(uid: int) -> str:
+    """Return the global command-bucket tier for ``uid`` in one cached read.
+
+    ``"exempt"`` for the Founder (no global throttle), ``"staff"`` for
+    Tester rank and above (roomier flood ceiling), ``"regular"`` for
+    everyone else. ``get_effective_role`` resolves the owner to
+    ``"founder"`` itself, so this single read covers all three tiers with
+    zero MongoDB round trips on cache hits. Fail-closed: any lookup
+    failure lands on ``"regular"`` (the strictest bucket), so an outage
+    never loosens throttling. Cancellation propagates.
+    """
+    try:
+        role = await db.users_roles.get_effective_role(uid)
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        log.debug("Throttle-tier lookup failed for %d: %s", uid, exc)
+        return "regular"
+    if role == "founder":
+        return "exempt"
+    # * role_rank is a pure mapping lookup (unknown roles rank 0), so no
+    # * failure path here; DB failures already returned "regular" above.
+    if db.users_roles.role_rank(role) >= db.users_roles.role_rank("tester"):
+        return "staff"
+    return "regular"
 
 
 async def global_rate_limit_handler(
@@ -221,9 +254,14 @@ async def global_rate_limit_handler(
     if not any(text.startswith(p) for p in cfg.prefixes if p):
         return  # * plain chat message - never rate-limit
 
-    if await _is_exempt(uid):
+    # * One cached read decides the flood ceiling: Founder skips it, staff
+    # * get the roomier bucket, everyone else the strict one. Per-handler
+    # * quotas below still pace each command individually.
+    tier = await _throttle_tier(uid)
+    if tier == "exempt":
         return
-    wait = await _cmd_limiter.check(uid)
+    limiter = _cmd_staff_limiter if tier == "staff" else _cmd_limiter
+    wait = await limiter.check(uid)
     if wait:
         if msg:
             try:

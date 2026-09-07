@@ -54,9 +54,11 @@ def rate_limit_text(wait_s: float) -> str:
 
     Used by the global command/callback limiter and every per-handler
     ``ratelimiter`` rejection so throttled users always see the same
-    wording regardless of which bucket stopped them.
+    wording regardless of which bucket stopped them. Clamped to a minimum
+    of 1 second: sub-second waits would otherwise render as the confusing
+    "try again in 0 seconds".
     """
-    return f"Slow down - try again in {wait_s:.0f} seconds."
+    return f"Slow down - try again in {max(1, round(wait_s))} seconds."
 
 
 # ─────────────────────── Permission Tiers ───────────────────────── #
