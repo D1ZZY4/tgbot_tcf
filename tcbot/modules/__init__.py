@@ -9,9 +9,14 @@ from __future__ import annotations
 import importlib
 import logging
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from telegram.ext import BaseHandler
 
 from tcbot import cfg
+
+if TYPE_CHECKING:
+    from types import ModuleType
 
 log = logging.getLogger(__name__)
 
@@ -20,11 +25,16 @@ log = logging.getLogger(__name__)
 
 
 def _discover_modules() -> list[str]:
-    """Return all .py module names in this directory, excluding __init__.py."""
+    """Return all .py module names in this directory, excluding __init__.py.
+
+    Sorted so handler registration order (and the startup log line below)
+    is deterministic across filesystems; ``Path.glob`` order is
+    OS-dependent and PTB resolves overlapping filters in registration order.
+    """
     this_dir = Path(__file__).parent
-    return [
+    return sorted(
         p.stem for p in this_dir.glob("*.py") if p.is_file() and p.name != "__init__.py"
-    ]
+    )
 
 
 def _filter_modules(modules: list[str]) -> list[str]:
@@ -51,22 +61,26 @@ def _filter_modules(modules: list[str]) -> list[str]:
 ALL_MODULES = _filter_modules(_discover_modules())
 log.info("Modules to load: %s", ALL_MODULES)
 
-__all__ = [*ALL_MODULES, "ALL_MODULES"]  # type: ignore[reportUnsupportedDunderAll]  # noqa: PLE0604
+__all__: list[str] = [*ALL_MODULES, "ALL_MODULES"]  # type: ignore[reportUnsupportedDunderAll]  # noqa: PLE0604
 
 
 # ─────────────────────── Handler Collection ─────────────────────── #
 
 
-def get_handlers() -> list[Any]:
-    """Import all active modules and collect their __handlers__ lists."""
-    handlers: list[Any] = []
-    mods_found: dict[str, Any] = {}
+def get_handlers() -> list[BaseHandler[Any, Any, Any]]:
+    """Import all active modules and collect their __handlers__ lists.
+
+    Imports run first so every failure is reported together before the
+    fail-fast exit; collection then follows ``ALL_MODULES`` order, which is
+    the sorted discovery order filtered by configuration.
+    """
+    handlers: list[BaseHandler[Any, Any, Any]] = []
+    mods_found: dict[str, ModuleType] = {}
 
     failed: list[str] = []
     for mod_name in ALL_MODULES:
         try:
-            mod = importlib.import_module(f"tcbot.modules.{mod_name}")
-            mods_found[mod_name] = mod
+            mods_found[mod_name] = importlib.import_module(f"tcbot.modules.{mod_name}")
         except Exception:
             failed.append(mod_name)
             log.exception("Failed to import tcbot.modules.%s", mod_name)
@@ -75,10 +89,10 @@ def get_handlers() -> list[Any]:
         raise SystemExit(f"Module import failed for: {', '.join(failed)}")
 
     for mod_name in ALL_MODULES:
-        mod = mods_found.get(mod_name)
-        if mod is None:
-            continue
-        mod_handlers = getattr(mod, "__handlers__", [])
+        # * Present by construction: any missing import raised SystemExit above.
+        mod_handlers: list[BaseHandler[Any, Any, Any]] = getattr(
+            mods_found[mod_name], "__handlers__", []
+        )
         if mod_handlers:
             handlers.extend(mod_handlers)
             log.debug("Loaded %d handler(s) from %s", len(mod_handlers), mod_name)

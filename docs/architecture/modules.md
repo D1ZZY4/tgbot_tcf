@@ -9,7 +9,7 @@ access, see [`database.md`](database.md). For runtime utilities, see
 
 ## Dynamic discovery
 
-`tcbot/modules/__init__.py` discovers every top-level `.py` file in `tcbot/modules/` except `__init__.py`.
+`tcbot/modules/__init__.py` discovers every top-level `.py` file in `tcbot/modules/` except `__init__.py`. Discovery is sorted so registration order is deterministic across filesystems (`Path.glob` order is OS-dependent and PTB resolves overlapping filters in registration order).
 
 ```mermaid
 flowchart TD
@@ -32,7 +32,7 @@ Environment filters:
 
 A module name is the filename without `.py`, for example `banning` or `stats`.
 
-`get_handlers()` imports active modules and returns the combined list of each module's `__handlers__`. The caller (`tcbot/__main__.py`) registers the returned handlers on the PTB application.
+`get_handlers()` imports active modules and returns the combined list of each module's `__handlers__` as `list[BaseHandler[Any, Any, Any]]`. Imports run first so every failure is reported together before the fail-fast exit; collection then follows `ALL_MODULES` order. The caller (`tcbot/__main__.py`) registers the returned handlers on the PTB application.
 
 ## Module contract
 

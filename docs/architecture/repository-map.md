@@ -154,7 +154,7 @@ sequenceDiagram
 
 ## Dynamic module discovery
 
-`tcbot/modules/__init__.py` discovers every top-level `tcbot/modules/*.py` file except `__init__.py`.
+`tcbot/modules/__init__.py` discovers every top-level `tcbot/modules/*.py` file except `__init__.py`. Discovery is sorted for deterministic registration order.
 
 Filtering order:
 
