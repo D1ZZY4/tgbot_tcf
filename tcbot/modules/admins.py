@@ -23,11 +23,11 @@ from tcbot.modules.helper import (
     replies,
 )
 from tcbot.modules.helper.decorators import resolve_and_check
-from tcbot.modules.helper.formatter import bold, code, esc, mention, user_ref
 from tcbot.modules.helper.identity import ANONYMOUS_BOT_ID
 from tcbot.modules.helper.workflows.demote_flow import Demote
 from tcbot.modules.helper.workflows.promote_flow import ROLE_ALIASES, Promote
 from tcbot.utils import error_reporter
+from tcbot.utils.formatter import bold, code, esc, mention, user_ref
 from tcbot.utils.prefixes import build_prefixed_filters, parse_cmd_args
 
 if TYPE_CHECKING:

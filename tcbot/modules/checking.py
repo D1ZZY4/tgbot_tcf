@@ -16,10 +16,10 @@ from tcbot import cfg
 from tcbot import database as db
 from tcbot.modules.helper import decorators, extraction, keyboards, replies
 from tcbot.modules.helper.ban_info import build_ban_detail
-from tcbot.modules.helper.formatter import bold, code, esc, mention
 from tcbot.modules.helper.parse_editmsg import safe_edit_cb
 from tcbot.modules.helper.parse_link import message_link
 from tcbot.modules.helper.workflows.check_flow import Check
+from tcbot.utils.formatter import bold, code, esc, mention
 from tcbot.utils.prefixes import build_prefixed_filters, parse_cmd_args
 from tcbot.utils.time_and_date import fmt_dt
 

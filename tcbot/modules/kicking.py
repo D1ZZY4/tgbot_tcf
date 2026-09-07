@@ -14,7 +14,6 @@ from telegram.ext import ContextTypes, ConversationHandler
 
 from tcbot.modules.helper import decorators, extraction, identity, replies
 from tcbot.modules.helper.decorators import resolve_and_check
-from tcbot.modules.helper.formatter import bold, code, mention
 from tcbot.modules.helper.workflows.demote_flow import Demote
 from tcbot.modules.helper.workflows.kicking_flow import kick_conversation, proof, reason
 from tcbot.modules.helper.workflows.reason_flow import (
@@ -24,6 +23,7 @@ from tcbot.modules.helper.workflows.reason_flow import (
     parse_inline_reason,
     reason_too_long_text,
 )
+from tcbot.utils.formatter import bold, code, mention
 from tcbot.utils.prefixes import build_prefixed_filters, parse_cmd_args
 
 if TYPE_CHECKING:

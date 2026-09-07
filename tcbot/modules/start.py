@@ -17,7 +17,7 @@ from tcbot import database as db
 from tcbot.modules.about import __about_msg__
 from tcbot.modules.groups import _render
 from tcbot.modules.helper import decorators, keyboards, replies
-from tcbot.modules.helper.formatter import bold, esc
+from tcbot.utils.formatter import bold, esc
 from tcbot.utils.prefixes import build_prefixed_filters
 
 if TYPE_CHECKING:

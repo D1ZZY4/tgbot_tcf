@@ -35,9 +35,9 @@ from tcbot import cfg
 from tcbot import database as db
 from tcbot.database.documents import BanDoc
 from tcbot.modules.helper import parse_logmsg, replies
-from tcbot.modules.helper.formatter import bold, code, esc, mention, pre
 from tcbot.modules.helper.parse_link import message_link
 from tcbot.utils.dispatch import count_transient_errors, fan_out
+from tcbot.utils.formatter import bold, code, esc, mention, pre
 from tcbot.utils.prefixes import ALL_PREFIXES_CMD_FILTER
 from tcbot.utils.time_and_date import to_utc, utc_now
 

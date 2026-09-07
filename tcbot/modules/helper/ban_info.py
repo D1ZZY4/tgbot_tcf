@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 from tcbot import cfg
 from tcbot import database as db
 from tcbot.modules.helper import replies
-from tcbot.modules.helper.formatter import bold, code, esc, mention
 from tcbot.modules.helper.parse_link import message_link
+from tcbot.utils.formatter import bold, code, esc, mention
 from tcbot.utils.time_and_date import fmt_dt
 
 if TYPE_CHECKING:

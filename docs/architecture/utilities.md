@@ -24,7 +24,6 @@ flowchart TD
     Modules --> Pagination
     Logging --> ErrorReporter
     ErrorReporter --> Fmt
-    HelperFmt[helper/formatter.py<br/>re-export shim] --> Fmt
     Alive[tcbot/alive.py<br/>health endpoint] --> CB
 ```
 
@@ -158,7 +157,7 @@ Always import these from `tcbot.utils.pagination`; do not reimplement pagination
 
 ## `formatter.py`
 
-Single source of truth for all Telegram HTML markup. Both the utils layer (e.g. `error_reporter.py`) and the modules layer import from here. `tcbot/modules/helper/formatter.py` is a thin re-export shim that preserves backward-compatible import paths for existing callers.
+Single source of truth for all Telegram HTML markup. Both the utils layer (e.g. `error_reporter.py`) and the modules layer import from here.
 
 | Function | Output/use |
 |---|---|
@@ -171,7 +170,7 @@ Single source of truth for all Telegram HTML markup. Both the utils layer (e.g. 
 | `mention(user_id, name, username=None)` | ID-based mention, always a clickable `FullName` resolving via `tg://user?id=...`. Backward-compatible alias for `user_ref()`. |
 | `user_ref(user_id, name, username=None)` | Action-summary reference. Always renders a clickable `FullName` resolving via `tg://user?id=ID`; usernames are never used. Falls back to the numeric ID as link text when the name is the bare numeric fallback. |
 
-Always import from `tcbot.utils.formatter` in utils-layer code. Modules-layer code may continue using `tcbot.modules.helper.formatter` (the shim) for backward compatibility.
+Always import from `tcbot.utils.formatter`.
 
 ## Utility boundaries
 

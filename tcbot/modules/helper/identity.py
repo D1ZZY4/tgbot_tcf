@@ -19,7 +19,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Literal
 
 from tcbot import database as db
-from tcbot.modules.helper.formatter import esc, user_ref
+from tcbot.utils.formatter import esc, user_ref
 
 if TYPE_CHECKING:
     from telegram import Bot

@@ -20,8 +20,8 @@ from tcbot.modules.helper.extraction import (
     identity_needs_refresh,
     launch_identity_refresh,
 )
-from tcbot.modules.helper.formatter import bold, code, esc, italic, mention
 from tcbot.modules.helper.identity import Identity, classify, profile_note
+from tcbot.utils.formatter import bold, code, esc, italic, mention
 from tcbot.utils.pagination import date_or_unknown, nav_row, paginate
 from tcbot.utils.time_and_date import fmt_dt
 

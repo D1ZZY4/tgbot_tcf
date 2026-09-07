@@ -22,8 +22,8 @@ from telegram.ext import (
 )
 
 from tcbot.modules.helper import replies
-from tcbot.modules.helper.formatter import bold, esc, mention
 from tcbot.modules.helper.workflows.proof_flow import BuildProof
+from tcbot.utils.formatter import bold, esc, mention
 from tcbot.utils.prefixes import ALL_PREFIXES_CMD_FILTER
 
 if TYPE_CHECKING:

@@ -19,9 +19,9 @@ if TYPE_CHECKING:
     from telegram import Update
 from tcbot.database.documents import GroupDoc
 from tcbot.modules.helper import decorators, replies
-from tcbot.modules.helper.formatter import bold, code, esc
 from tcbot.modules.helper.keyboards import tcgroups_kb
 from tcbot.modules.helper.parse_editmsg import safe_edit
+from tcbot.utils.formatter import bold, code, esc
 from tcbot.utils.prefixes import build_prefixed_filters
 
 log = logging.getLogger(__name__)

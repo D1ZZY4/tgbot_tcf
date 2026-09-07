@@ -13,7 +13,7 @@ from telegram.ext import CallbackQueryHandler, ContextTypes
 
 from tcbot import cfg
 from tcbot.modules.helper import decorators, keyboards
-from tcbot.modules.helper.formatter import bold, esc
+from tcbot.utils.formatter import bold, esc
 
 if TYPE_CHECKING:
     from telegram import Update

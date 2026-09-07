@@ -19,7 +19,7 @@ from telegram import (
 )
 from telegram.constants import KeyboardButtonStyle
 
-from tcbot.modules.helper.formatter import bold
+from tcbot.utils.formatter import bold
 
 log = logging.getLogger(__name__)
 

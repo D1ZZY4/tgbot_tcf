@@ -153,7 +153,7 @@ Rules:
 - Use `cfg.proof_timeout` and `cfg.appeal_timeout` instead of hardcoded
   conversation timeouts.
 - Define inline keyboard builders only in `tcbot/modules/helper/keyboards.py`.
-- Use formatter helpers from `tcbot/modules/helper/formatter.py`.
+- Use formatter helpers from `tcbot/utils/formatter.py`.
 
 ## Datetime Handling
 

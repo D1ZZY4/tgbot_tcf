@@ -13,7 +13,7 @@ from typing import TYPE_CHECKING
 from tcbot import cfg
 from tcbot import database as db
 from tcbot.modules.helper import parse_logmsg
-from tcbot.modules.helper.formatter import bold, esc, mention
+from tcbot.utils.formatter import bold, esc, mention
 
 if TYPE_CHECKING:
     from telegram import Bot, Message

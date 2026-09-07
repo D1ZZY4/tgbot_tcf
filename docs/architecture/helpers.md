@@ -10,7 +10,6 @@ helpers used by these helpers, see [`database.md`](database.md).
 flowchart TD
     Modules[tcbot/modules/*.py] --> Helper[tcbot/modules/helper/]
     Helper --> Decorators[decorators.py<br/>permission guards]
-    Helper --> Formatter[formatter.py<br/>HTML escape, mention]
     Helper --> Extraction[extraction.py<br/>extract_target]
     Helper --> Identity[identity.py<br/>role classification]
     Helper --> Keyboards[keyboards.py<br/>InlineKeyboard builders]
@@ -56,7 +55,7 @@ async def cmd_example(update, ctx): ...
 
 ## `formatter.py`
 
-This file is a **backward-compatible re-export shim**. All formatter logic lives in `tcbot/utils/formatter.py` (the single source of truth). The shim re-exports every public name so that existing callers using `from tcbot.modules.helper.formatter import bold` continue to work unchanged.
+Removed: formatting helpers live only in `tcbot/utils/formatter.py` (the single source of truth) and every caller imports from there directly. There is no helper-layer copy.
 
 All bot messages use Telegram HTML parse mode. Functions are documented in full
 in [`utilities.md#formatterpy`](utilities.md).

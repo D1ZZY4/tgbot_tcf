@@ -116,9 +116,8 @@ Current stack:
 │   │   └── types.py          Domain primitive types
 │   ├── modules/              Telegram command modules and handlers
 │   │   ├── helper/           Shared helper code and conversation workflows
-│   │   │   ├── workflows/    ConversationHandler flows (`*_flow.py` only)
-│   │   │   ├── formatter.py  HTML-safe Telegram message formatting
-│   │   │   ├── keyboards.py  Inline keyboard builders
+  │   │   │   ├── workflows/    ConversationHandler flows (`*_flow.py` only)
+  │   │   │   ├── keyboards.py  Inline keyboard builders
 │   │   │   ├── decorators.py  Rate limiter, role checks, execution logging
 │   │   │   ├── extraction.py Target/user extraction helpers
 │   │   │   ├── identity.py   Self/bot/Telegram/Founder/staff classification

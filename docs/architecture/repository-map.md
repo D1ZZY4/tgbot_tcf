@@ -73,9 +73,8 @@ tcbot/
 │   ├── *.py                Command and callback modules
 │   └── helper/
 │       ├── decorators.py   Auth, per-handler rate limits, tracing, resolve_and_check
-│       ├── extraction.py   Target resolution
-│       ├── formatter.py    HTML escaping and formatting
-│       ├── keyboards.py    Inline keyboard factories
+  │       ├── extraction.py   Target resolution
+  │       ├── keyboards.py    Inline keyboard factories
 │       ├── ban_info.py     Ban detail renderer
 │       ├── identity.py     Identity classification, refusal messages, staff notices
 │       ├── replies.py      Shared reply string constants (errors, permissions, syntax)

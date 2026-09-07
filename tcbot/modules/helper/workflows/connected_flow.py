@@ -25,8 +25,8 @@ from telegram.constants import ChatMemberStatus, KeyboardButtonStyle
 from tcbot import cfg
 from tcbot import database as db
 from tcbot.modules.helper import parse_logmsg
-from tcbot.modules.helper.formatter import bold, code
 from tcbot.utils.dispatch import count_transient_errors, fan_out
+from tcbot.utils.formatter import bold, code
 from tcbot.utils.time_and_date import TELEGRAM_LOOKUP_TIMEOUT
 
 if TYPE_CHECKING:

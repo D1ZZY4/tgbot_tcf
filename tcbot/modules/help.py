@@ -16,8 +16,8 @@ from telegram.ext import CallbackQueryHandler, ContextTypes, MessageHandler
 from tcbot import cfg
 from tcbot.modules import ALL_MODULES
 from tcbot.modules.helper import decorators, keyboards
-from tcbot.modules.helper.formatter import bold, code, esc
 from tcbot.modules.helper.parse_editmsg import safe_edit_cb
+from tcbot.utils.formatter import bold, code, esc
 from tcbot.utils.prefixes import build_prefixed_filters, parse_cmd_args
 
 if TYPE_CHECKING:

@@ -9,7 +9,6 @@ from __future__ import annotations
 from telegram.ext import CallbackQueryHandler, filters
 
 from tcbot.modules.helper import replies
-from tcbot.modules.helper.formatter import bold, code, pre
 from tcbot.modules.helper.workflows.appeal_flow import (
     LOCK_HOURS,
     appeal,
@@ -17,6 +16,7 @@ from tcbot.modules.helper.workflows.appeal_flow import (
     starts_with_appeal_tag,
     text_references_log_message,
 )
+from tcbot.utils.formatter import bold, code, pre
 
 # * Re-exported for backward-compatible imports.
 __all__ = (

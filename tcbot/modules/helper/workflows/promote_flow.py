@@ -15,7 +15,7 @@ from pymongo.errors import DuplicateKeyError
 from tcbot import cfg
 from tcbot import database as db
 from tcbot.modules.helper import keyboards, parse_logmsg
-from tcbot.modules.helper.formatter import esc, user_ref
+from tcbot.utils.formatter import esc, user_ref
 
 if TYPE_CHECKING:
     from telegram import Bot

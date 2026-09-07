@@ -10,7 +10,7 @@ from typing import TYPE_CHECKING
 
 from tcbot import cfg
 from tcbot import database as db
-from tcbot.modules.helper.formatter import code, esc, link, mention, safe_username
+from tcbot.utils.formatter import code, esc, link, mention, safe_username
 from tcbot.utils.time_and_date import fmt_dt, utc_now
 
 if TYPE_CHECKING:

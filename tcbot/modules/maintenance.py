@@ -17,9 +17,9 @@ from tcbot import cfg
 from tcbot import database as db
 from tcbot.database.documents import GroupDoc
 from tcbot.modules.helper import decorators, parse_logmsg, replies
-from tcbot.modules.helper.formatter import bold, code
 from tcbot.modules.helper.parse_editmsg import safe_reply
 from tcbot.utils.dispatch import fan_out
+from tcbot.utils.formatter import bold, code
 from tcbot.utils.prefixes import build_prefixed_filters
 
 if TYPE_CHECKING:

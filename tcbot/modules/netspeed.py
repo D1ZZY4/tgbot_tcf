@@ -16,7 +16,7 @@ from speedtest import ConfigRetrievalError, Speedtest, SpeedtestHTTPSHandler
 from telegram.ext import ContextTypes, MessageHandler
 
 from tcbot.modules.helper import decorators, replies
-from tcbot.modules.helper.formatter import bold, code
+from tcbot.utils.formatter import bold, code
 from tcbot.utils.prefixes import build_prefixed_filters
 from tcbot.utils.time_and_date import elapsed_ms, monotonic
 

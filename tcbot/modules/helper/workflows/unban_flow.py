@@ -14,8 +14,8 @@ from tcbot import cfg
 from tcbot import database as db
 from tcbot.database import documents as docs
 from tcbot.modules.helper import parse_logmsg
-from tcbot.modules.helper.formatter import user_ref
 from tcbot.utils.dispatch import count_transient_errors, fan_out
+from tcbot.utils.formatter import user_ref
 
 if TYPE_CHECKING:
     from telegram import Update

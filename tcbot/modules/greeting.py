@@ -23,9 +23,9 @@ from telegram.ext import (
 from tcbot import cfg
 from tcbot import database as db
 from tcbot.modules.helper import decorators
-from tcbot.modules.helper.formatter import esc, mention
 from tcbot.modules.helper.parse_link import appeal_deep_link
 from tcbot.modules.helper.workflows.demote_flow import Demote
+from tcbot.utils.formatter import esc, mention
 
 if TYPE_CHECKING:
     from telegram import Bot, Chat, Message, Update, User
