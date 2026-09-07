@@ -80,7 +80,7 @@ The federation log emitted by `parse_logmsg.demoted` is identical in every case;
 ## Manual demotion flow (`/tcdemote`)
 
 1. Founder or Admin runs `/tcdemote <target>`. The `@staff_only` decorator rejects non-staff executors.
-2. `cmd_demote` resolves the target via `extract_target` in parallel with the executor's effective role (`users_roles.get_effective_role`).
+2. `cmd_demote` resolves the target via `extract_target` in parallel with the executor's effective role (`users_roles.get_effective_role`) through the shared `_resolve_executor_target` helper (same helper backs `cmd_promote`).
 3. The bot reads the target's effective role. Identity refusal fires first (`self`, this bot, Telegram, other bots, anonymous admin, and Founder all have dedicated refusal lines, e.g. Founder gets `... is the Founder - try /transferowner ...`).
    - If the role is `None`/empty, the bot replies `That user doesn't hold a role that can be removed.` and stops.
    - If the target is `"admin"` and the executor is not Founder, the bot replies `Only the Founder can demote an Admin.` and stops.
@@ -92,8 +92,8 @@ Callback data: `demote_confirm:<target_id>` and `demote_cancel:<target_id>`.
 
 `on_demote_confirm`:
 
-1. Re-checks the executor's effective role alongside `q.answer()`; if no longer Founder/Admin, answers with an alert and removes the keyboard.
-2. Then fetches the target role and the target's mention data (name + username) in a second parallel gather.
+1. Re-checks the executor's effective role alongside `q.answer()` through the shared `_check_callback_staff` helper (same helper backs the promote role button); if no longer Founder/Admin, edits the perm-expired notice and removes the keyboard. Cancellation from either branch propagates.
+2. Then fetches the target role and the target's mention data (name + username) in a second parallel gather; cancellation from either branch propagates instead of rendering a fallback.
 3. Re-applies the Admin-only-Founder rule.
 4. Calls `Demote.execute(ctx.bot, target_id, target_fname, target_role, admin.id, admin.first_name, trigger=None)`.
 5. On a successful removal, edits the confirmation message to `Done. <mention> - <code id> has been removed from <Role>.` and clears the keyboard.

@@ -162,9 +162,9 @@ When Founder promotes a target to Admin:
 When Founder or Admin assigns Developer/Tester:
 
 1. `users_roles.set_role(target_id, role, assigned_by)` atomically upserts into `tc_roles` (no prior remove; the upsert replaces any existing Developer/Tester entry without a delete-then-insert window).
-3. `users_cache.upsert_user(...)` caches the display name.
-4. A `promoted` log (with the assigned role) is sent to `cfg.logs`.
-5. The target is notified by DM when possible.
+2. `users_cache.upsert_user(...)` caches the display name.
+3. A `promoted` log (with the assigned role) is sent to `cfg.logs`.
+4. The target is notified by DM when possible.
 
 ### Admin request to promote someone to Admin
 
@@ -215,11 +215,10 @@ Approval does the following:
 
 1. Adds the target to `tc_admins` with `users_roles.add_admin(...)`.
 2. Marks the request `approved` with `queues_db.resolve(...)`.
-3. Sends a `promote_approved_log` to `cfg.logs`.
-4. Notifies the target by DM when possible.
-5. Edits the review message to append who approved it and removes the keyboard.
-
-Approval does not remove an existing Developer/Tester role in this callback path. Effective role resolution still returns Admin because Admin outranks custom roles, but the custom role document may remain unless removed elsewhere.
+3. Best-effort cleanup mirrors the direct Founder path: clears any stale Developer/Tester row and refreshes the member cache (otherwise the stale row resurrects on the next demote).
+4. Sends a `promote_approved_log` to `cfg.logs`.
+5. Notifies the target by DM when possible.
+6. Edits the review message to append who approved it and removes the keyboard.
 
 ### Rejection
 
@@ -295,8 +294,8 @@ Flow:
 
 1. The target is resolved by reply, user ID, or username.
 2. The command rejects transferring ownership to the current owner.
-3. The current owner is added to `tc_admins` before ownership changes.
-4. `users_roles.set_owner(target_id)` replaces the single owner record in `tc_owners`.
+3. `users_roles.set_owner(target_id)` replaces the single owner record in `tc_owners` first, so a mid-flight failure never leaves the federation ownerless.
+4. The previous Founder is kept as Admin via `users_roles.add_admin(...)`; a failure here stays visible as a WARNING line telling the operator to grant Admin manually.
 5. The owner cache and effective-role cache are updated/cleared.
 6. An `ownership_transferred` log is sent to `cfg.logs`.
 7. The command replies with the new owner mention.
@@ -334,8 +333,8 @@ Role and promotion logs are built in `parse_logmsg.py`:
 ## Edge cases
 
 - Effective role cache can make reads fast, but writes invalidate affected users or clear the cache when ownership changes.
-- A user can technically have both an Admin record and a custom role; effective role resolution returns Admin because it is checked before `tc_roles`.
-- Direct Founder promotion to Admin removes existing Developer/Tester custom role, but promotion-request approval currently does not.
+- A user holds at most one live role: both the direct Founder path and the approval path clear any Developer/Tester row when granting Admin.
+- Direct Founder promotion to Admin removes existing Developer/Tester custom role, and promotion-request approval now does the same.
 - Promotion and demotion callbacks re-check current permissions at click time; losing permission after the menu was created blocks the callback.
 - Founder cannot be assigned over or demoted through the normal role commands.
 - Admin cannot demote Admin; Founder is required.

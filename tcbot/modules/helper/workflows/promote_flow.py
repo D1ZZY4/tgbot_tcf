@@ -205,6 +205,12 @@ class Promote:
             db.users_roles.get_owner_id(),
             return_exceptions=True,
         )
+        # * Cancellation is never a queue verdict: propagate before the
+        # * DuplicateKeyError / generic-error branches below coerce it.
+        if isinstance(request_id, asyncio.CancelledError):
+            raise request_id
+        if isinstance(owner_id, asyncio.CancelledError):
+            raise owner_id
         if isinstance(request_id, DuplicateKeyError):
             # * Lost the insert race: another promote queued first under the
             # * pending-unique index. Report the existing request, not an error.

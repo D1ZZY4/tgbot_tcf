@@ -31,7 +31,9 @@ from tcbot.utils import error_reporter
 from tcbot.utils.prefixes import build_prefixed_filters, parse_cmd_args
 
 if TYPE_CHECKING:
-    from telegram import Update
+    from telegram import Bot, CallbackQuery, Message, Update
+
+    from tcbot.modules.helper.identity import Identity
 
 log = logging.getLogger(__name__)
 
@@ -135,6 +137,148 @@ __help__: replies.HelpEntry = {
 }
 
 
+# ─────────────── Shared resolve helpers (promote/demote) ─────────────── #
+# * cmd_promote and cmd_demote shared one 25-line executor-plus-target
+# * fetch with identical fail-closed semantics. One owner keeps the
+# * cancellation contract and the reply wording in a single place so a
+# * future fix cannot land in one command and miss the other. Callbacks
+# * share the staff re-check for the same reason. All gathers stay
+# * parallel (executor role + target, classify + role) so the hot path
+# * costs one cached round trip, never two serial ones.
+
+
+async def _resolve_executor_target(
+    msg: Message,
+    admin_id: int,
+    update: Update,
+    args: list[str],
+    bot: Bot | None,
+    *,
+    action: str,
+) -> tuple[str, int, str | None] | None:
+    """Fetch executor role and target in parallel, fail closed.
+
+    Returns ``(executor_role, target_id, target_fname)`` or ``None`` when
+    the caller must return (retry reply already sent, or a genuinely
+    role-less executor denied silently like the decorator would).
+    """
+    _exec_r, _target_r = await asyncio.gather(
+        db.users_roles.get_effective_role(admin_id),
+        extraction.extract_target(update, args, bot),
+        return_exceptions=True,
+    )
+    if isinstance(_exec_r, asyncio.CancelledError):
+        raise _exec_r
+    if isinstance(_target_r, asyncio.CancelledError):
+        raise _target_r
+    if isinstance(_exec_r, BaseException):
+        # * Transient outage between the staff_only check and this read:
+        # * answer instead of going silently dead. A genuinely role-less
+        # * caller (revoked in the gap) gets None below and returns; the
+        # * decorator denies them properly on retry.
+        log.warning("cmd_%s executor role lookup failed: %s", action, _exec_r)
+        try:
+            await msg.reply_text(_ERR_ROLE_LOOKUP_FAILED)
+        except Exception as exc:
+            log.debug("cmd_%s lookup-fail reply failed: %s", action, exc)
+        return None
+    executor_role = _exec_r
+    if executor_role is None:
+        return None
+    if isinstance(_target_r, BaseException):
+        log.error("extract_target failed during %s: %s", action, _target_r)
+        try:
+            await msg.reply_text(replies.ERR_CANNOT_RESOLVE)
+        except Exception as exc:
+            log.debug("cmd_%s no-target reply failed: %s", action, exc)
+        return None
+    target_id, target_fname = _target_r
+    if not target_id:
+        try:
+            await msg.reply_text(replies.ERR_CANNOT_RESOLVE)
+        except Exception as exc:
+            log.debug("cmd_%s no-target-id reply failed: %s", action, exc)
+        return None
+    return executor_role, target_id, target_fname
+
+
+async def _classify_and_load_role(
+    bot: Bot,
+    admin_id: int,
+    target_id: int,
+    target_fname: str | None,
+    msg: Message,
+    *,
+    action: str,
+) -> tuple[Identity, str | None] | None:
+    """Classify the target and load its live role in parallel, fail closed.
+
+    Returns ``(ident, current_role)`` or ``None`` when the caller must
+    return (retry reply already sent). Cancellation always propagates.
+    """
+    ident_r, role_r = await asyncio.gather(
+        identity.classify(bot, admin_id, target_id, target_fname),
+        db.users_roles.get_effective_role(target_id),
+        return_exceptions=True,
+    )
+    if isinstance(ident_r, asyncio.CancelledError):
+        raise ident_r
+    if isinstance(role_r, asyncio.CancelledError):
+        raise role_r
+    if isinstance(ident_r, BaseException):
+        log.error(
+            "identity.classify failed during %s for target=%d: %s",
+            action,
+            target_id,
+            ident_r,
+        )
+        try:
+            await msg.reply_text(_ERR_CLASSIFY_FAILED)
+        except Exception as exc:
+            log.debug("cmd_%s classify-failed reply failed: %s", action, exc)
+        return None
+    if isinstance(role_r, BaseException):
+        log.error(
+            "target role lookup failed during %s for target=%d: %s",
+            action,
+            target_id,
+            role_r,
+        )
+        try:
+            await msg.reply_text(_ERR_ROLE_LOOKUP_FAILED)
+        except Exception as exc:
+            log.debug("cmd_%s role-lookup-failed reply failed: %s", action, exc)
+        return None
+    return ident_r, role_r
+
+
+async def _check_callback_staff(admin_id: int, q: CallbackQuery) -> str | None:
+    """Re-check Founder/Admin rank alongside ``q.answer()`` in parallel.
+
+    Answers the spinner immediately regardless of DB latency. Returns the
+    staff role, or ``None`` after editing the perm-expired notice.
+    Cancellation from either branch propagates instead of rendering.
+    """
+    role_r, answer_r = await asyncio.gather(
+        db.users_roles.get_effective_role(admin_id),
+        q.answer(),
+        return_exceptions=True,
+    )
+    if isinstance(role_r, asyncio.CancelledError):
+        raise role_r
+    if isinstance(answer_r, asyncio.CancelledError):
+        raise answer_r
+    if isinstance(answer_r, BaseException):
+        log.debug("callback answer failed: %s", answer_r)
+    if isinstance(role_r, BaseException) or role_r not in ("founder", "admin"):
+        try:
+            await q.edit_message_text(replies.ERR_PERM_EXPIRED, reply_markup=None)
+        except Exception as exc:
+            log.debug("callback perm-expired edit failed: %s", exc)
+        return None
+    return role_r
+
+
 # ────────────────── Command Promote </tcpromote> ────────────────── #
 
 
@@ -176,80 +320,21 @@ async def cmd_promote(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         except Exception as exc:
             log.debug("cmd_promote needs-target reply failed: %s", exc)
         return
-    # * Executor role (founder/admin guaranteed by @staff_only) + target run in parallel
-    _exec_r, _target_r = await asyncio.gather(
-        db.users_roles.get_effective_role(admin.id),
-        extraction.extract_target(update, args, ctx.bot),
-        return_exceptions=True,
+    resolved = await _resolve_executor_target(
+        msg, admin.id, update, args, ctx.bot, action="promote"
     )
-    if isinstance(_exec_r, asyncio.CancelledError):
-        raise _exec_r
-    if isinstance(_target_r, asyncio.CancelledError):
-        raise _target_r
-    executor_role = None if isinstance(_exec_r, BaseException) else _exec_r
-    if isinstance(_exec_r, BaseException):
-        # * Transient outage between the staff_only check and this read:
-        # * answer instead of going silently dead. A genuinely role-less
-        # * caller (revoked in the gap) gets None below and returns; the
-        # * decorator denies them properly on retry.
-        log.warning("cmd_promote executor role lookup failed: %s", _exec_r)
-        try:
-            await msg.reply_text(_ERR_ROLE_LOOKUP_FAILED)
-        except Exception as exc:
-            log.debug("cmd_promote lookup-fail reply failed: %s", exc)
+    if resolved is None:
         return
-    if executor_role is None:
-        return
-    if isinstance(_target_r, BaseException):
-        log.error("extract_target failed during promote: %s", _target_r)
-        try:
-            await msg.reply_text(replies.ERR_CANNOT_RESOLVE)
-        except Exception as exc:
-            log.debug("cmd_promote no-target reply failed: %s", exc)
-        return
-    target_id, target_fname = _target_r
+    executor_role, target_id, target_fname = resolved
     remaining_args = args[1:] if has_explicit_target else args
     role_arg = remaining_args[0].lower() if remaining_args else ""
 
-    if not target_id:
-        try:
-            await msg.reply_text(replies.ERR_CANNOT_RESOLVE)
-        except Exception as exc:
-            log.debug("cmd_promote no-target-id reply failed: %s", exc)
-        return
-
-    # * identity classify and current-role fetch are independent reads; run in parallel.
-    ident, current_role = await asyncio.gather(
-        identity.classify(ctx.bot, admin.id, target_id, target_fname),
-        db.users_roles.get_effective_role(target_id),
-        return_exceptions=True,
+    classified = await _classify_and_load_role(
+        ctx.bot, admin.id, target_id, target_fname, msg, action="promote"
     )
-    if isinstance(ident, BaseException):
-        if isinstance(ident, asyncio.CancelledError):
-            raise ident
-        log.error(
-            "identity.classify failed during promote for target=%d: %s",
-            target_id,
-            ident,
-        )
-        try:
-            await msg.reply_text(_ERR_CLASSIFY_FAILED)
-        except Exception as exc:
-            log.debug("cmd_promote classify-failed reply failed: %s", exc)
+    if classified is None:
         return
-    if isinstance(current_role, asyncio.CancelledError):
-        raise current_role
-    if isinstance(current_role, BaseException):
-        log.error(
-            "target role lookup failed during promote for target=%d: %s",
-            target_id,
-            current_role,
-        )
-        try:
-            await msg.reply_text(_ERR_ROLE_LOOKUP_FAILED)
-        except Exception as exc:
-            log.debug("cmd_promote role-lookup-failed reply failed: %s", exc)
-        return
+    ident, current_role = classified
     refusal = identity.refuse_message("promote", ident)
     if refusal is not None:
         try:
@@ -328,23 +413,8 @@ async def on_promote_role_btn(update: Update, ctx: ContextTypes.DEFAULT_TYPE) ->
         await q.answer()
         return
 
-    # * Gather role check + q.answer() in parallel so the spinner disappears
-    # * immediately, regardless of DB latency.
-    executor_role, _ = await asyncio.gather(
-        db.users_roles.get_effective_role(admin.id),
-        q.answer(),
-        return_exceptions=True,
-    )
-    if isinstance(executor_role, asyncio.CancelledError):
-        raise executor_role
-    if isinstance(executor_role, BaseException) or executor_role not in (
-        "founder",
-        "admin",
-    ):
-        try:
-            await q.edit_message_text(replies.ERR_PERM_EXPIRED, reply_markup=None)
-        except Exception as exc:
-            log.debug("admins promote perm-expired edit failed: %s", exc)
+    executor_role = await _check_callback_staff(admin.id, q)
+    if executor_role is None:
         return
 
     if role not in ("admin", "developer", "tester"):
@@ -353,15 +423,20 @@ async def on_promote_role_btn(update: Update, ctx: ContextTypes.DEFAULT_TYPE) ->
         except Exception as exc:
             log.debug("admins promote unknown-role edit failed: %s", exc)
         return
-    target_fname, current_role = await asyncio.gather(
+    target_fname_r, current_role = await asyncio.gather(
         db.users_cache.get_first_name(target_id, str(target_id)),
         db.users_roles.get_effective_role(target_id),
         return_exceptions=True,
     )
+    if isinstance(target_fname_r, asyncio.CancelledError):
+        raise target_fname_r
     if isinstance(current_role, asyncio.CancelledError):
         raise current_role
-    if isinstance(target_fname, BaseException):
-        target_fname = str(target_id)
+    target_fname = (
+        target_fname_r
+        if not isinstance(target_fname_r, BaseException)
+        else str(target_id)
+    )
     if isinstance(current_role, BaseException):
         log.error(
             "target role lookup failed during promote callback for target=%d: %s",
@@ -427,77 +502,19 @@ async def cmd_demote(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         return
     args = parse_cmd_args(msg.text)
 
-    # * Executor role (founder/admin guaranteed by @staff_only) + target run in parallel
-    _exec_r, _target_r = await asyncio.gather(
-        db.users_roles.get_effective_role(admin.id),
-        extraction.extract_target(update, args, ctx.bot),
-        return_exceptions=True,
+    resolved = await _resolve_executor_target(
+        msg, admin.id, update, args, ctx.bot, action="demote"
     )
-    if isinstance(_exec_r, asyncio.CancelledError):
-        raise _exec_r
-    if isinstance(_target_r, asyncio.CancelledError):
-        raise _target_r
-    executor_role = None if isinstance(_exec_r, BaseException) else _exec_r
-    if isinstance(_exec_r, BaseException):
-        # * Same transient-outage rationale as cmd_promote above: answer
-        # * instead of going silently dead; a revoked caller returns on the
-        # * None path below and is denied by the decorator on retry.
-        log.warning("cmd_demote executor role lookup failed: %s", _exec_r)
-        try:
-            await msg.reply_text(_ERR_ROLE_LOOKUP_FAILED)
-        except Exception as exc:
-            log.debug("cmd_demote lookup-fail reply failed: %s", exc)
+    if resolved is None:
         return
-    if executor_role is None:
-        return
-    # * The None check above already narrows str | None to str for pyright;
-    # * no assert needed (asserts vanish under python -O).
-    if isinstance(_target_r, BaseException):
-        log.error("extract_target failed during demote: %s", _target_r)
-        try:
-            await msg.reply_text(replies.ERR_CANNOT_RESOLVE)
-        except Exception as exc:
-            log.debug("cmd_demote no-target reply failed: %s", exc)
-        return
-    target_id, target_fname = _target_r
+    executor_role, target_id, target_fname = resolved
 
-    if not target_id:
-        try:
-            await msg.reply_text(replies.ERR_CANNOT_RESOLVE)
-        except Exception as exc:
-            log.debug("cmd_demote no-target-id reply failed: %s", exc)
-        return
-
-    # * identity classify and target-role fetch are independent reads; run in parallel.
-    ident, target_role = await asyncio.gather(
-        identity.classify(ctx.bot, admin.id, target_id, target_fname),
-        db.users_roles.get_effective_role(target_id),
-        return_exceptions=True,
+    classified = await _classify_and_load_role(
+        ctx.bot, admin.id, target_id, target_fname, msg, action="demote"
     )
-    if isinstance(ident, BaseException):
-        if isinstance(ident, asyncio.CancelledError):
-            raise ident
-        log.error(
-            "identity.classify failed during demote for target=%d: %s", target_id, ident
-        )
-        try:
-            await msg.reply_text(_ERR_CLASSIFY_FAILED)
-        except Exception as exc:
-            log.debug("cmd_demote classify-failed reply failed: %s", exc)
+    if classified is None:
         return
-    if isinstance(target_role, asyncio.CancelledError):
-        raise target_role
-    if isinstance(target_role, BaseException):
-        log.error(
-            "target role lookup failed during demote for target=%d: %s",
-            target_id,
-            target_role,
-        )
-        try:
-            await msg.reply_text(_ERR_ROLE_LOOKUP_FAILED)
-        except Exception as exc:
-            log.debug("cmd_demote role-lookup-failed reply failed: %s", exc)
-        return
+    ident, target_role = classified
     refusal = identity.refuse_message("demote", ident)
     if refusal is not None:
         try:
@@ -559,26 +576,9 @@ async def on_demote_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
     except IndexError:
         await q.answer()
         return
-    # * Gather role check + q.answer() in parallel so the spinner disappears
-    # * immediately, regardless of DB latency.
-    executor_role, _ = await asyncio.gather(
-        db.users_roles.get_effective_role(admin.id),
-        q.answer(),
-        return_exceptions=True,
-    )
-    if isinstance(executor_role, asyncio.CancelledError):
-        raise executor_role
-    if isinstance(executor_role, BaseException) or executor_role not in (
-        "founder",
-        "admin",
-    ):
-        try:
-            await q.edit_message_text(replies.ERR_PERM_EXPIRED, reply_markup=None)
-        except Exception as exc:
-            log.debug("on_demote_confirm perm-expired edit failed: %s", exc)
+    executor_role = await _check_callback_staff(admin.id, q)
+    if executor_role is None:
         return
-    # * The membership check above already narrows executor_role to a staff
-    # * role for pyright; no assert needed (asserts vanish under python -O).
 
     target_role, mention_data = await asyncio.gather(
         db.users_roles.get_effective_role(target_id),
@@ -587,6 +587,8 @@ async def on_demote_confirm(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
     )
     if isinstance(target_role, asyncio.CancelledError):
         raise target_role
+    if isinstance(mention_data, asyncio.CancelledError):
+        raise mention_data
     if isinstance(target_role, BaseException):
         log.error(
             "target role lookup failed during demote callback for target=%d: %s",
@@ -674,11 +676,12 @@ async def on_demote_cancel(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> No
 async def cmd_transfer(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     """Transfer federation ownership to another user.
 
-    Resolves the new owner target, runs identity checks, then sequentially
-    demotes the current owner to Admin (``add_admin``) and promotes the target
-    to Founder (``set_owner``). The two DB writes are intentionally sequential
-    because ``set_owner`` does a ``delete_many`` that must see the owner record
-    before it is replaced. Logs and confirmation reply run in parallel afterward.
+    Resolves the new owner target, runs identity checks, then replaces the
+    owner record via ``set_owner`` first and keeps the previous Founder as
+    Admin via ``add_admin`` second. ``set_owner`` first keeps the federation
+    from ever going ownerless on a mid-flight failure; a failed ``add_admin``
+    stays visible as a WARNING line in the reply. Logs and confirmation
+    reply run in parallel afterward.
     """
     current_owner = update.effective_user
     msg = update.effective_message
@@ -972,12 +975,20 @@ async def on_promo_decision(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
         return
     # * Pre-fetch request record alongside ownership check and q.answer();
     # * request_id is known from q.data so the DB call can fire speculatively.
-    is_owner, req_result, _ = await asyncio.gather(
+    is_owner, req_result, answer_r = await asyncio.gather(
         db.users_roles.is_owner(admin.id),
         db.queues_db.get_request_by_id(request_id),
         q.answer(),
         return_exceptions=True,
     )
+    if isinstance(is_owner, asyncio.CancelledError):
+        raise is_owner
+    if isinstance(req_result, asyncio.CancelledError):
+        raise req_result
+    if isinstance(answer_r, asyncio.CancelledError):
+        raise answer_r
+    if isinstance(answer_r, BaseException):
+        log.debug("on_promo_decision answer failed: %s", answer_r)
     if isinstance(is_owner, BaseException):
         log.warning("on_promo_decision owner check failed: %s", is_owner)
         try:
@@ -1065,6 +1076,23 @@ async def on_promo_decision(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> N
             except Exception as exc:
                 log.debug("promo_approve db-fail edit failed: %s", exc)
             return
+        # * Mirror _assign_admin: a Developer/Tester row left beside the new
+        # * Admin record resurrects on the next demote (effective role prefers
+        # * Admin, so the stale row is invisible until remove_admin reveals
+        # * it). Best-effort cleanup keeps one role per user; failures only
+        # * log because the promotion itself already committed.
+        cleanup_r = await asyncio.gather(
+            db.users_roles.remove_role(target_id),
+            db.users_cache.upsert_user(target_id, None, target_fname),
+            return_exceptions=True,
+        )
+        for _r in cleanup_r:
+            if isinstance(_r, asyncio.CancelledError):
+                raise _r
+            if isinstance(_r, BaseException):
+                log.warning(
+                    "promo_approve cleanup failed for target=%d: %s", target_id, _r
+                )
         log_text = parse_logmsg.promote_approved_log(
             target_id,
             target_fname,
