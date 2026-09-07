@@ -17,6 +17,7 @@ from telegram import (
     InlineKeyboardMarkup,
     Message,
 )
+from telegram.constants import KeyboardButtonStyle
 
 from tcbot import cfg
 from tcbot import database as db
@@ -106,12 +107,28 @@ def main_kb() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton("Staff Roster", callback_data="stats_admins"),
-                InlineKeyboardButton("Users", callback_data="stats_users:0"),
+                InlineKeyboardButton(
+                    "Staff Roster",
+                    callback_data="stats_admins",
+                    style=KeyboardButtonStyle.PRIMARY,
+                ),
+                InlineKeyboardButton(
+                    "Users",
+                    callback_data="stats_users:0",
+                    style=KeyboardButtonStyle.PRIMARY,
+                ),
             ],
             [
-                InlineKeyboardButton("Connected Chats", callback_data="stats_chats:0"),
-                InlineKeyboardButton("User Bans", callback_data="stats_bans:0"),
+                InlineKeyboardButton(
+                    "Connected Chats",
+                    callback_data="stats_chats:0",
+                    style=KeyboardButtonStyle.PRIMARY,
+                ),
+                InlineKeyboardButton(
+                    "User Bans",
+                    callback_data="stats_bans:0",
+                    style=KeyboardButtonStyle.PRIMARY,
+                ),
             ],
         ]
     )
@@ -151,7 +168,11 @@ def _list_kb(
         return base
 
     num_btns = [
-        InlineKeyboardButton(str(i + 1), callback_data=_callback(i))
+        InlineKeyboardButton(
+            str(i + 1),
+            callback_data=_callback(i),
+            style=KeyboardButtonStyle.PRIMARY,
+        )
         for i in range(n_items)
     ]
     rows.extend(
@@ -501,7 +522,11 @@ class Stats:
             lines.append(f"{base_idx + i}. {esc(fname)} - {code(str(uid))}")
 
         search_row = [
-            InlineKeyboardButton("Search", callback_data="stats_bans_search"),
+            InlineKeyboardButton(
+                "Search",
+                callback_data="stats_bans_search",
+                style=KeyboardButtonStyle.PRIMARY,
+            ),
         ]
         return "\n".join(lines), _list_kb(
             page,
@@ -543,7 +568,15 @@ class Stats:
             text, proof_link = await build_ban_detail(ban)
             rows: list[list[InlineKeyboardButton]] = []
             if proof_link:
-                rows.append([InlineKeyboardButton("View Proof", url=proof_link)])
+                rows.append(
+                    [
+                        InlineKeyboardButton(
+                            "View Proof",
+                            url=proof_link,
+                            style=KeyboardButtonStyle.PRIMARY,
+                        )
+                    ]
+                )
             rows.append(
                 [InlineKeyboardButton("« Back", callback_data=f"stats_bans:{page}")]
             )
@@ -561,7 +594,15 @@ class Stats:
         text, proof_link = await build_ban_detail(ban)
         rows: list[list[InlineKeyboardButton]] = []
         if proof_link:
-            rows.append([InlineKeyboardButton("View Proof", url=proof_link)])
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        "View Proof",
+                        url=proof_link,
+                        style=KeyboardButtonStyle.PRIMARY,
+                    )
+                ]
+            )
         rows.append(
             [InlineKeyboardButton("« Back", callback_data=f"stats_bans:{page}")]
         )
@@ -578,7 +619,11 @@ class Stats:
     @staticmethod
     def _search_results_kb(n: int) -> InlineKeyboardMarkup:
         num_btns = [
-            InlineKeyboardButton(str(i + 1), callback_data=f"stats_search_item:{i}")
+            InlineKeyboardButton(
+                str(i + 1),
+                callback_data=f"stats_search_item:{i}",
+                style=KeyboardButtonStyle.PRIMARY,
+            )
             for i in range(n)
         ]
         rows: list[list[InlineKeyboardButton]] = [
@@ -587,7 +632,11 @@ class Stats:
         ]
         rows.append(
             [
-                InlineKeyboardButton("New Search", callback_data="stats_bans_search"),
+                InlineKeyboardButton(
+                    "New Search",
+                    callback_data="stats_bans_search",
+                    style=KeyboardButtonStyle.PRIMARY,
+                ),
                 InlineKeyboardButton("Cancel", callback_data="stats_search_cancel"),
             ]
         )
@@ -597,7 +646,15 @@ class Stats:
     def _search_detail_kb(proof_link: str | None = None) -> InlineKeyboardMarkup:
         rows: list[list[InlineKeyboardButton]] = []
         if proof_link:
-            rows.append([InlineKeyboardButton("View Proof", url=proof_link)])
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        "View Proof",
+                        url=proof_link,
+                        style=KeyboardButtonStyle.PRIMARY,
+                    )
+                ]
+            )
         rows.append([InlineKeyboardButton("« Back", callback_data="stats_search_back")])
         return InlineKeyboardMarkup(rows)
 

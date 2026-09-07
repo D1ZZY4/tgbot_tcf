@@ -51,8 +51,20 @@ def ban_log_new(
     """Ban-log keyboard with explicit appeal URL."""
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton(f"Proof {target_id}", url=proof_link)],
-            [InlineKeyboardButton("Submit Appeal", url=appeal_url)],
+            [
+                InlineKeyboardButton(
+                    f"Proof {target_id}",
+                    url=proof_link,
+                    style=KeyboardButtonStyle.PRIMARY,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "Submit Appeal",
+                    url=appeal_url,
+                    style=KeyboardButtonStyle.PRIMARY,
+                )
+            ],
         ]
     )
 
@@ -69,13 +81,27 @@ def ban_log_update(
     # * truncate on narrow clients.
     return InlineKeyboardMarkup(
         [
-            [InlineKeyboardButton(f"Proof {target_id}", url=proof_link)],
             [
                 InlineKeyboardButton(
-                    f"Previous Proof {target_id}", url=previous_proof_link
+                    f"Proof {target_id}",
+                    url=proof_link,
+                    style=KeyboardButtonStyle.PRIMARY,
                 )
             ],
-            [InlineKeyboardButton("Submit Appeal", url=appeal_url)],
+            [
+                InlineKeyboardButton(
+                    f"Previous Proof {target_id}",
+                    url=previous_proof_link,
+                    style=KeyboardButtonStyle.PRIMARY,
+                )
+            ],
+            [
+                InlineKeyboardButton(
+                    "Submit Appeal",
+                    url=appeal_url,
+                    style=KeyboardButtonStyle.PRIMARY,
+                )
+            ],
         ]
     )
 
@@ -93,6 +119,7 @@ def appeal_button_kb(
                 InlineKeyboardButton(
                     "Submit Appeal",
                     url=appeal_deep_link(bot_username, ban_id),
+                    style=KeyboardButtonStyle.PRIMARY,
                 )
             ]
         ]
@@ -110,7 +137,15 @@ def action_proof_kb(
     if not proof_link:
         return None
     return InlineKeyboardMarkup(
-        [[InlineKeyboardButton(f"Proof {target_id}", url=proof_link)]]
+        [
+            [
+                InlineKeyboardButton(
+                    f"Proof {target_id}",
+                    url=proof_link,
+                    style=KeyboardButtonStyle.PRIMARY,
+                )
+            ]
+        ]
     )
 
 
@@ -187,13 +222,27 @@ def checkme_ban_kb(
     if not bot_username:
         return None
     appeal_url = appeal_deep_link(bot_username, ban_id)
-    row1 = [InlineKeyboardButton("Details", callback_data=f"checkme_detail:{ban_id}")]
+    row1 = [
+        InlineKeyboardButton(
+            "Details",
+            callback_data=f"checkme_detail:{ban_id}",
+            style=KeyboardButtonStyle.PRIMARY,
+        )
+    ]
     if proof_link:
-        row1.append(InlineKeyboardButton("Proof", url=proof_link))
+        row1.append(
+            InlineKeyboardButton(
+                "Proof", url=proof_link, style=KeyboardButtonStyle.PRIMARY
+            )
+        )
     return InlineKeyboardMarkup(
         [
             row1,
-            [InlineKeyboardButton("Appeal", url=appeal_url)],
+            [
+                InlineKeyboardButton(
+                    "Appeal", url=appeal_url, style=KeyboardButtonStyle.PRIMARY
+                )
+            ],
         ]
     )
 
@@ -205,7 +254,13 @@ def checkme_detail_back_kb(
     """Detail view keyboard - optional Proof (row 1), Back (row 2)."""
     rows = []
     if proof_link:
-        rows.append([InlineKeyboardButton("Proof", url=proof_link)])
+        rows.append(
+            [
+                InlineKeyboardButton(
+                    "Proof", url=proof_link, style=KeyboardButtonStyle.PRIMARY
+                )
+            ]
+        )
     rows.append(
         [InlineKeyboardButton("« Back", callback_data=f"checkme_back:{ban_id}")]
     )

@@ -11,6 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import KeyboardButtonStyle
 
 from tcbot import database as db
 from tcbot.database.documents import BanDoc
@@ -229,10 +230,12 @@ class Check:
                 InlineKeyboardButton(
                     f"Bans ({ban_total})",
                     callback_data=f"check_bans:{target_id}:0",
+                    style=KeyboardButtonStyle.PRIMARY,
                 ),
                 InlineKeyboardButton(
                     f"Appeals ({appeal_total})",
                     callback_data=f"check_appeals:{target_id}:0",
+                    style=KeyboardButtonStyle.PRIMARY,
                 ),
             ]
         )
@@ -241,6 +244,7 @@ class Check:
                 InlineKeyboardButton(
                     f"Warnings ({fed_warn_total} active)",
                     callback_data=f"check_warns:{target_id}",
+                    style=KeyboardButtonStyle.PRIMARY,
                 ),
             ]
         )
@@ -249,10 +253,12 @@ class Check:
                 InlineKeyboardButton(
                     f"Kicks ({kick_total})",
                     callback_data=f"check_kicks:{target_id}:0",
+                    style=KeyboardButtonStyle.PRIMARY,
                 ),
                 InlineKeyboardButton(
                     f"Mutes ({mute_total})",
                     callback_data=f"check_mutes:{target_id}:0",
+                    style=KeyboardButtonStyle.PRIMARY,
                 ),
             ]
         )
@@ -303,6 +309,7 @@ class Check:
                 InlineKeyboardButton(
                     str(base_idx + i),
                     callback_data=f"check_ban_item:{target_id}:{ban.get('ban_id', '')}",
+                    style=KeyboardButtonStyle.PRIMARY,
                 )
             )
 
@@ -341,10 +348,26 @@ class Check:
         text, proof_link = await build_ban_detail(ban)
         rows: list[list[InlineKeyboardButton]] = []
         if proof_link:
-            rows.append([InlineKeyboardButton("View Proof", url=proof_link)])
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        "View Proof",
+                        url=proof_link,
+                        style=KeyboardButtonStyle.PRIMARY,
+                    )
+                ]
+            )
         appeal_link = ban.get("appeal_link")
         if appeal_link:
-            rows.append([InlineKeyboardButton("View Appeal", url=appeal_link)])
+            rows.append(
+                [
+                    InlineKeyboardButton(
+                        "View Appeal",
+                        url=appeal_link,
+                        style=KeyboardButtonStyle.PRIMARY,
+                    )
+                ]
+            )
         rows.append(
             [
                 InlineKeyboardButton(
@@ -392,6 +415,7 @@ class Check:
                     InlineKeyboardButton(
                         f"{title[:_BUTTON_TITLE_MAX]} ({count})",
                         callback_data=f"check_warn_chat:{target_id}:{cid}:0",
+                        style=KeyboardButtonStyle.PRIMARY,
                     )
                 ]
             )
@@ -553,6 +577,7 @@ class Check:
                 InlineKeyboardButton(
                     str(base_idx + i),
                     callback_data=f"check_ban_item:{target_id}:{ban.get('ban_id', '')}",
+                    style=KeyboardButtonStyle.PRIMARY,
                 )
             )
 
