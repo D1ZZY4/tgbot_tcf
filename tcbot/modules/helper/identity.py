@@ -82,47 +82,35 @@ async def classify(
 ) -> Identity:
     """Return an :class:`Identity` for ``target_id`` relative to ``executor_id``.
 
-    Parameters
-    ----------
-    bot:
-        Live PTB bot. Used to detect targets that are *this* bot.
-    executor_id:
-        The user invoking the moderation command.
-    target_id:
-        The user being acted on.
-    target_fname:
-        Best-effort first name from upstream resolution; falls back to a cache
-        lookup, then to the bare numeric ID string (``str(target_id)``).
-    target_is_bot:
-        Optional pre-known bot flag (e.g. from ``bot.get_chat`` upstream).
+    The name-cache and role-cache reads are independent, so they run in
+    parallel and the total latency is one round trip rather than two, even
+    when the role is ultimately unused (self, bot, and Telegram targets
+    return before any role check).
 
-    Notes
-    -----
-    Both the name cache lookup and the role cache lookup are independent reads;
-    they run in parallel via :func:`asyncio.gather` so the total latency is one
-    round-trip rather than two, even when the role is ultimately unused (e.g.
-    self / bot / Telegram early-returns).
-
-    Caller contract: a role-lookup failure degrades to ``kind="user"`` (fail
-    open), so every moderation caller MUST pair this with an independent
-    fail-closed role read: ``resolve_and_check`` for ban/kick/mute/warn/unban
-    entries, or a guarded ``get_effective_role`` fetch for promote/demote.
-    The paired read rejects the action on lookup failure, which is what keeps
-    the degraded ``"user"`` kind from becoming an authorization bypass.
-
+    A role-lookup failure degrades to ``kind="user"`` (fail open), so every
+    moderation caller must pair this with an independent fail-closed role
+    read: ``resolve_and_check`` for ban, kick, mute, warn, and unban entries,
+    or a guarded ``get_effective_role`` fetch for promote and demote. The
+    paired read rejects the action on lookup failure, which keeps the
+    degraded ``"user"`` kind from becoming an authorization bypass.
+    Cancellation always propagates; only ordinary lookup failures degrade.
     """
     # * Both are independent cached reads; run in parallel.
     # * return_exceptions=True prevents a transient DB error from propagating
     # * to every moderation command that calls classify().
-    results = await asyncio.gather(
+    mention_data, role_result = await asyncio.gather(
         db.users_cache.get_user_mention_data(target_id),
         db.users_roles.get_effective_role(target_id),
         return_exceptions=True,
     )
+    if isinstance(mention_data, asyncio.CancelledError):
+        raise mention_data
+    if isinstance(role_result, asyncio.CancelledError):
+        raise role_result
     (cached_fname, target_username) = (
-        results[0] if not isinstance(results[0], BaseException) else (None, None)
+        mention_data if not isinstance(mention_data, BaseException) else (None, None)
     )
-    role = results[1] if not isinstance(results[1], BaseException) else None
+    role = role_result if not isinstance(role_result, BaseException) else None
     # * Override fname when it looks like a fallback: missing, the legacy
     # * "User <id>" format, or a bare numeric string returned by _best_name().
     if (

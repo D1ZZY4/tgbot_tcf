@@ -114,7 +114,7 @@ See [keyboard styles](../reference/keyboard-styles.md) for layout, color, and ca
 
 ## `identity.py`
 
-`identity.classify(bot, executor_id, target_id, target_fname, *, target_is_bot=None)` returns an `Identity` dataclass that classifies a moderation target as one of: `self`, `this_bot`, `other_bot`, `telegram`, `founder`, `admin`, `developer`, `tester`, `user`. Pass `target_is_bot=True` to skip the Telegram bot lookup when the caller already knows the target is a bot.
+`identity.classify(bot, executor_id, target_id, target_fname, *, target_is_bot=None)` returns an `Identity` dataclass that classifies a moderation target as one of: `self`, `this_bot`, `other_bot`, `telegram`, `anon_admin`, `founder`, `admin`, `developer`, `tester`, `user`. Pass `target_is_bot=True` to skip the Telegram bot lookup when the caller already knows the target is a bot. The name and role cache reads run in parallel; a role-lookup failure degrades to `user` (fail open, callers pair it with a fail-closed role read) while cancellation always propagates.
 
 The `Identity` dataclass now includes:
 - `kind`: The identity type
