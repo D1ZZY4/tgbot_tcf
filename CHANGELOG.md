@@ -4,22 +4,36 @@ For workflow details mentioned below, see [`docs/operations/ci-cd.md`](docs/oper
 
 ## [Unreleased]
 
+<details open>
+<summary>Unreleased changes (click to collapse)</summary>
+
 ### Changed
 
 - **Semantic button colors plus tidier rows** (`tcbot/modules/helper/keyboards.py`, `appeal_flow.py`, `connected_flow.py`, `reason_flow.py`, `proof_flow.py`, `stats_flow.py`, `docs/reference/keyboard-styles.md`, `docs/architecture/helpers.md`): verified via Context7 plus the installed PTB 22.8 source that `InlineKeyboardButton(style=...)` exists (`KeyboardButtonStyle.SUCCESS`/`DANGER`/`PRIMARY`, added in PTB 22.7; older clients render the same buttons without color, so styling is purely additive). `Approve` is now `SUCCESS`, `Reject` and destructive `Confirm` are `DANGER`, and continue/select steps (`Connect`, role options, `Skip`) are `PRIMARY`; Cancel, Back, navigation, menus, toggles, drill-ins, and URL buttons stay neutral. Rows tidied without touching labels or `callback_data`: the groups toggle shares one row with `« Back`, and search results pair `[ New Search ] [ Cancel ]`. No logic, authorization, or callback-data change; in-flight keyboards keep working.
+
 - **Shared appeal gates plus parallel reject writes** (`tcbot/modules/helper/workflows/appeal_flow.py`): the stale-review, rejection-cooldown, and conversation-state-clear blocks were triplicated across `_start` and `_on_message`; they now go through `_is_stale_review`, `_cooldown_remaining_h`, and `_clear_appeal_state` (one key tuple, identical replies and windows). Rejection resolves the display name in parallel with `set_rejected_by` (cooldown-before-clear ordering preserved) instead of paying one extra serial DB round trip. No success-path behavior change.
 
 ### Fixed
 
 - **Identity recognition on every command surface** (`tcbot/modules/checking.py`, `tcbot/modules/helper/workflows/check_flow.py`, `tcbot/modules/helper/identity.py`, `docs/features/moderation/check.md`): audited all 29 command handlers for self/bot/Founder/staff handling. Moderation entries (ban/kick/mute/warn/unban/unmute/unwarn/resetwarns/promote/demote/transfer) already classify plus refuse; read-only and non-target commands need none by design. Two gaps closed: `Check.profile` classifies Telegram and anonymous-admin targets with recognition notes (same parallel batch, no new round trip), and `/checkme` from a bot/anonymous sender is refused instead of reporting a misleading clean verdict for a placeholder ID. Note copy lives in the new `identity.profile_note` table (single owner for "who is this?" lines; `refuse_message` / `staff_notice` stay the owners for enforcement paths). Verified with stubbed DB reads for bot/self/Telegram/anon/other/no-executor cases.
+
 - **`/check` recognizes the bot itself and the viewer** (`tcbot/modules/helper/workflows/check_flow.py`, `tcbot/modules/checking.py`, `docs/features/moderation/check.md`, `docs/architecture/workflows.md`, `docs/features/moderation/banning.md`): `Check.profile` never classified the target, so checking the bot rendered `Role: Regular user` with bare counts instead of recognizing itself. `profile` takes a keyword-only `executor_id` (passed by `cmd_check` and the `check_main` back handler) and runs `identity.classify` inside the existing parallel batch; `this_bot` targets get a `That's me - ...` note and `self` targets a `That's you - ...` note, while Founder/staff keep the existing `Role:` label and need no note. Counts, drill-downs, and keyboard are identical; a failed lookup degrades to no note (read-only command, nothing to fail closed) and `CancelledError` still propagates. Verified with stubbed DB reads for bot/self/other/no-executor cases.
+
 - **Runner shutdown waits for graceful exit** (`.github/workflows/run-bot.yml`, `docs/operations/ci-cd.md`): `start_bot` captured the PID through command substitution, so the bot was never a job of the supervisory shell and the final `wait` always failed silently; after SIGTERM the script raced straight into the scrub/upload steps and the artifact could lose its final lines. The bot is now backgrounded directly (`$!` stays a real child job) and shutdown polls up to 60 s for exit (`uv run` forwards SIGTERM to the child, verified against upstream docs) before proceeding; a stubborn process is left for runner teardown inside the 30 min post-window buffer. Supervision (`kill -0`), fail-fast, backoff, handover, and cron fallback paths are unchanged.
+
 - **Shape-valid CI dummy tokens** (`.github/workflows/lint.yml`, `dependency-update.yml`): the dummy `BOT_TOKEN` values were 20 chars after the colon versus the 35 the startup format check expects, logging a spurious warning on every CI run. Padded with zeros to full shape (presence/shape-only at import, no connection attempted). No behavior change.
+
 - **Cancelled appeal reads no longer destroy the review card** (`tcbot/modules/helper/workflows/appeal_flow.py`): a cancelled `get_ban` in `on_decision` was coerced into the "Ban record not found" card edit and a cancelled `q.answer` was discarded; a cancelled deactivation in `_approve_appeal` was coerced into the DB-fail card edit. Cancellation now propagates with the shared card untouched so a re-tap retries the full sequence. The approve display-name fallback still proceeds to fan-out (enforcement already committed), and post-commit notify sends keep the swallow-plus-log convention.
 
 ### Documentation
 
 - **Appeal doc sync** (`docs/features/appeals.md`, `docs/architecture/workflows.md`): removed the duplicated approval sentence; rejection steps now state the parallel cooldown-write plus name-read and the parallel DM/edit/clear batch; workflows appeal bullet notes the cancel-propagates contract; behavior reference gains the shared-gate bullet.
+
+- **GitHub Actions automation tutorial** (`README.md`): new collapsible block in the `Deployment` section covering all four CI workflows (Lint triggers and gate steps, Auto-Fix branch-versus-comment behavior with its permissions, Dependency Updates cadence plus PR branch/label and conditional Telegram DM, CodeQL languages and schedule), each verified against the workflow files. Points at `docs/operations/ci-cd.md` for the full reference. No code or behavior change.
+
+- **Collapsible deployment tutorials** (`README.md`, `docs/getting-started/setup.md`): new `Deployment` section with one `<details>` tutorial per target (GitHub Actions 24/7 self-chaining runner with secrets plus `BOT_PAT` handover and cron fallback, Vercel native serverless with fail-closed secrets, Docker and Compose, Heroku container stack without a Procfile, VPS with a systemd unit, Windows Server over RDP), each verified against `.github/workflows/run-bot.yml`, `vercel.json`, `api/webhook.py`, `api/cron.py`, `Dockerfile`, and `docker-compose.yml`. `setup.md` hosted setup now points at the matrix. No code or behavior change.
+
+</details>
 
 ## [6.5.1] - 2026-09-07
 

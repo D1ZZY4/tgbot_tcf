@@ -72,6 +72,10 @@ For Replit or another hosting platform:
 
 Do not commit a filled `config.env` file.
 
+Per-platform tutorials (GitHub Actions 24/7 runner, Vercel serverless,
+Docker, Heroku, VPS with systemd, Windows over RDP) live in the collapsible
+`Deployment` section of [`../../README.md`](../../README.md#deployment).
+
 ### Community links (optional)
 
 The Additional Links menu in the bot start screen shows buttons for community channels, groups, and the TRAVEL community. Each button is shown only when its corresponding env var is set to a non-empty URL. Leave any of these empty to hide that button:

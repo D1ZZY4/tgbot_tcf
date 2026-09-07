@@ -151,6 +151,112 @@ In production set `WEBHOOK_URL` to the public HTTPS base URL so Telegram deliver
 
 One pitfall to avoid: committing `config.env` with real values because local testing worked. Keep it untracked and put production values in the host secret manager instead.
 
+## Deployment
+
+Run exactly one live instance per token on exactly one target below. Every target runs the same command (`uv run python -m tcbot`) except Vercel serverless, which uses `/api/webhook` + `/api/cron` instead of a process.
+
+<details>
+<summary>GitHub Actions automation (lint, auto-fix, dependencies, CodeQL)</summary>
+
+Four CI workflows run automatically; no secrets needed (validation steps use dummy values, so fork PRs work too). All use Python 3.14 with `uv sync --frozen` and cached `uv` setup.
+
+- **Lint** (`lint.yml`): on push to `main`/`feat/**`/`fix/**` and PRs to `main`. Runs `ruff format --check`, `ruff check`, and the `import tcbot` check. Fails the PR subject to branch protection.
+- **Auto-Fix** (`auto-fix.yml`): same push/PR triggers plus weekly Monday 04:00 UTC and manual dispatch. Runs `ruff format` + `ruff check --fix`; outside a PR it force-pushes the fixed `auto-fix/ruff` branch and opens a PR, on a PR it comments the local fix commands instead. Needs `contents: write` + `pull-requests: write`.
+- **Dependency Updates** (`dependency-update.yml`): weekly Monday 04:00 UTC and manual dispatch. Runs `uv lock --upgrade`, validates with Ruff plus the import check, then opens a `deps/auto-update-YYYYMMDD` PR labeled `dependencies` against `main` (no-op when the lockfile is unchanged). Sends the owner a Telegram status DM when `BOT_TOKEN`/`OWNER_ID` secrets exist, silently skips otherwise.
+- **CodeQL** (`codeql.yml`): on push/PR to `main` plus weekly Tuesday 15:38 UTC. Scans the `actions` and `python` languages with `build-mode: none`; findings land under the repository Security tab.
+
+Mirror the gate locally before pushing: `uv run ruff format --check .`, `uv run ruff check .`, `uv run python -c "import tcbot"`. Full reference: [`docs/operations/ci-cd.md`](docs/operations/ci-cd.md).
+</details>
+
+<details>
+<summary>GitHub Actions 24/7 runner (self-chaining)</summary>
+
+`.github/workflows/run-bot.yml` runs the bot in 5-hour windows (GitHub hard-caps a job at 6 h) with a crash watchdog, a handover dispatch about 10 minutes before the window ends, and a `*/15` cron resurrection fallback.
+
+1. Repository → Settings → Secrets and variables → Actions: set `BOT_TOKEN`, `MONGODB_URI`, `OWNER_ID` (plus `WEBHOOK_URL`/`WEBHOOK_SECRET` for webhook mode, `REDIS_URL` optional).
+2. For gap-free chaining add `BOT_PAT`: a Personal Access Token with the `workflow` scope. Without it only the 15-minute cron restarts the bot.
+3. Actions → "TCF Bot - 24/7 Runner" → Run workflow (or wait for the schedule).
+4. Verify in the run logs (`Bot started`, `subsystems ready`); crash tails ship as credential-scrubbed artifacts kept 7 days.
+
+Fail-fast guard: 5 deaths within 10 minutes aborts the run (usually bad config); the cron recovers after you fix secrets. Full reference: [`docs/operations/ci-cd.md`](docs/operations/ci-cd.md). Respect GitHub Actions usage limits and Terms of Service; this runner is a community convenience, not a hosting SLA.
+</details>
+
+<details>
+<summary>Vercel native serverless</summary>
+
+Telegram delivers each update to `/api/webhook`; Vercel Cron drives warn expiry through `/api/cron`. No process, no polling, no scheduler.
+
+1. Vercel → Project → Settings → Environment Variables: set `BOT_TOKEN`, `MONGODB_URI`, `OWNER_ID`, `WEBHOOK_SECRET` (required, fail-closed `503` without it), `CRON_SECRET` (required, fail-closed without it).
+2. Deploy with `vercel --prod` (dependencies from `pyproject.toml` + `uv.lock`, Python `3.14`, two functions with `maxDuration: 60` plus a daily `02:00 UTC` cron per `vercel.json`).
+3. Stop every other instance for this token, then register the webhook once per URL: `curl -X POST "https://api.telegram.org/bot<BOT_TOKEN>/setWebhook" -d "url=https://<project>.vercel.app/api/webhook" -d "secret_token=<WEBHOOK_SECRET>" -d "drop_pending_updates=true"`.
+4. Validate: `GET /api/webhook` → `200 OK`; `/checkme` in bot DM replies; `GET /api/cron` with `Authorization: Bearer <CRON_SECRET>` → `200`.
+
+Limits: multi-step conversations are best-effort (cold starts drop instance-memory state), timed unbans never fire, large fan-outs can approach the function timeout. Proof-gated moderation belongs on a long-lived transport. Full reference: [`docs/operations/vercel.md`](docs/operations/vercel.md).
+</details>
+
+<details>
+<summary>Docker and Docker Compose</summary>
+
+1. `cp config.env.example .env` and set at least `BOT_TOKEN`, `OWNER_ID`, `MONGODB_URI=mongodb://mongo:27017`, `REDIS_URL=redis://redis:6379/0`.
+2. `docker compose up --build` (bot plus `mongo:7` plus `redis:7-alpine`, each with health checks; the bot waits for both databases).
+3. Verify: `curl localhost:5000/health` returns subsystem JSON with HTTP 200.
+
+Single image without compose: `docker build -t tcf-bot .` then `docker run --env-file .env -p 5000:5000 tcf-bot` (image command is `uv run --frozen python -m tcbot`). Point MongoDB/Redis at reachable hosts.
+</details>
+
+<details>
+<summary>Heroku (container stack, no Procfile needed)</summary>
+
+The repository ships no `Procfile`; deploy the existing `Dockerfile` through the container registry.
+
+1. `heroku create <app> && heroku stack:set container --app <app>` (or set the stack in Dashboard → Settings).
+2. `heroku config:set BOT_TOKEN=... MONGODB_URI=... OWNER_ID=... WEBHOOK_URL=https://<app>.herokuapp.com WEBHOOK_SECRET=... --app <app>` (plus `REDIS_URL` from Heroku Data for Redis when needed; never commit secrets).
+3. `heroku container:push worker --app <app> && heroku container:release worker --app <app>`.
+4. `heroku ps:scale worker=1 --app <app>` and verify with `heroku logs --tail --app <app>`.
+
+Heroku assigns `PORT` automatically and the bot reads it from the environment. Keep exactly one `worker` dyno per token.
+</details>
+
+<details>
+<summary>VPS with systemd (Ubuntu/Debian)</summary>
+
+1. Install Python 3.14 and `uv`, then `git clone <repo-url> /opt/tcf-bot && cd /opt/tcf-bot && uv sync --frozen`.
+2. Create `/opt/tcf-bot/config.env` with `BOT_TOKEN`, `OWNER_ID`, `MONGODB_URI` (Atlas with the VPS IP allowlisted, or self-hosted MongoDB), mode `0600`.
+3. Install this unit as `/etc/systemd/system/tcf-bot.service` (adjust the `uv` path from `which uv`):
+
+```ini
+[Unit]
+Description=TCF Bot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=tcfbot
+WorkingDirectory=/opt/tcf-bot
+EnvironmentFile=/opt/tcf-bot/config.env
+ExecStart=/usr/local/bin/uv run --frozen python -m tcbot
+Restart=on-failure
+RestartSec=30
+
+[Install]
+WantedBy=multi-user.target
+```
+
+4. `systemctl daemon-reload && systemctl enable --now tcf-bot && journalctl -u tcf-bot -f`.
+5. Webhook mode needs a public HTTPS URL pointing at `PORT` (reverse proxy or tunnel) with `WEBHOOK_URL` set; without one the bot polls, which is fine for one instance. Open the firewall only for what the proxy needs and point the uptime monitor at `GET /health`.
+</details>
+
+<details>
+<summary>Windows Server over RDP</summary>
+
+1. RDP in, install Python 3.14 (add to PATH) and `uv` (`irm https://astral.sh/uv/install.ps1 | iex`), then `git clone <repo-url> C:\tcf-bot` and `uv sync --frozen` inside it.
+2. Create `C:\tcf-bot\config.env` with `BOT_TOKEN`, `OWNER_ID`, `MONGODB_URI`; restrict it to the service account via file ACLs.
+3. Verify once interactively: `uv run python -m tcbot` (expect `subsystems ready`, `Ctrl+C` to stop).
+4. Persist with Task Scheduler: trigger "At startup", action `uv.exe run --frozen python -m tcbot` with start-in `C:\tcf-bot`, "Run whether user is logged on or not", "If the task fails, restart every 1 minute". Prefer a dedicated service account, never an admin's personal session.
+5. Webhook mode needs public HTTPS reaching the host `PORT` (reverse proxy or tunnel) plus `WEBHOOK_URL`; otherwise the bot polls. Monitor `GET /health` and keep exactly one running instance per token.
+</details>
+
 ## Health Check
 
 The Flask keep-alive server binds to `0.0.0.0:${PORT}` (defaults to `5000` on unset, invalid, or out-of-range values).
