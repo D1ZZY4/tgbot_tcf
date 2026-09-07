@@ -125,15 +125,16 @@ The kick is not attempted in this case; previously this exception was swallowed 
 
 Execution order:
 
-1. Upload proof to `cfg.proofs` when `proof_msgs` is non-empty. The proof caption uses `parse_logmsg.proof_caption_new`. If upload fails, the kick still proceeds with no proof link.
-2. Call `ctx.bot.ban_chat_member(chat_id, target_id)` to remove the user.
-3. Re-check the target's effective role and re-run `Demote.execute(..., trigger="kick")` when staff, closing the proof-collection TOCTOU window (best-effort; the kick proceeds even if the re-demote fails).
-4. Fan three independent side-effects in parallel with `asyncio.gather(..., return_exceptions=True)`:
+1. When `proof_msgs` is non-empty, start the proof upload to `cfg.proofs` as a background task (caption `parse_logmsg.proof_caption_new`). If upload fails, the kick still proceeds with no proof link.
+2. Call `ctx.bot.ban_chat_member(chat_id, target_id)` to remove the user immediately, without waiting for the proof-channel round trip. On ban failure the in-flight upload is cancelled and the executor replies with a permissions/retry hint.
+3. Await the upload and build the proof keyboard from the resulting link.
+4. Re-check the target's effective role via `Demote.redemote_before_fanout(..., trigger="kick")`, closing the proof-collection TOCTOU window (best-effort; the kick proceeds even if the re-demote fails).
+5. Fan three independent side-effects in parallel with `asyncio.gather(..., return_exceptions=True)`:
    - `unban_chat_member(chat_id, target_id, only_if_banned=True)` - the "user can rejoin" step.
    - `db.kicks_db.log_kick(target_id, chat_id, reason_text, admin_id)` - audit row.
    - `ctx.bot.send_message(cfg.logs, kick_log, ..., reply_markup=proof_kb)` - federation log post.
-5. If the unban call raises, the reply text is appended with a `WARNING:` line so the moderator is told the user is still banned in this chat.
-6. The reply reads `<user> has been kicked. Reason: <reason>. They can rejoin via invite link.` plus the optional `WARNING:` line.
+6. If the unban call raises, the reply text is appended with a `WARNING:` line so the moderator is told the user is still banned in this chat.
+7. The reply reads `<user> has been kicked. Reason: <reason>. They can rejoin via invite link.` plus the optional `WARNING:` line.
 
 If `ban_chat_member` itself raises (the chat-level exception, not the parallelized children), `execute_kick` catches it, logs the full traceback, and replies with a generic permissions/retry hint (raw error text is never echoed to the chat).
 

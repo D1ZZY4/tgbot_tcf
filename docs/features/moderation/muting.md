@@ -27,7 +27,7 @@ flowchart TD
     ProofStep --> Exec[execute_mute: persist record then restrict]
     Exec --> Store[log_mute + set_active_mute DB writes]
     Store -->|write failed| AbortM[Retry notice, no group touched]
-    Store -->|stored| FanOut[fan_out restrict across groups]
+    Store -->|stored| FanOut[fan_out restrict + upload proof concurrently]
     FanOut --> Log[log channel post]
     FanOut --> Reply[Edit prompt to summary]
     Unmute[/tcunmute command/] --> ExecU[execute_unmute]
@@ -164,13 +164,12 @@ Execution order:
 2. Build the active-groups list: `groups_db.active_groups()` plus any primary groups (`cfg.main_group`, `cfg.exec_group`) that are not already present. A fetch outage aborts with a retry notice and no group is touched.
 3. Persist `db.mutes_db.log_mute(...)` and `db.mutes_db.set_active_mute(target_id, until=until)` first. Either write failing aborts with a retry notice and no group is touched (fail-closed, mirroring the ban flow and the warn auto-ban): enforcing chats without an `active_mutes` row would leave a restriction that `/tcunmute` refuses to lift.
 4. Build the restriction `ChatPermissions(can_send_messages=False)` and the `until_date` value (`utc_now() + duration` or `None` for permanent).
-5. Re-check the target's effective role and re-run `Demote.execute(..., trigger="mute")` when staff, closing the proof-collection TOCTOU window (best-effort; the mute proceeds even if the re-demote fails).
-6. Fan `restrict_chat_member` across the group list with `fan_out(...)`. Failed calls are counted with `count_transient_errors(results)`.
-7. Upload proof to `cfg.proofs` when `proof_msgs` is non-empty. The proof caption uses `parse_logmsg.proof_caption_new`. If upload fails, the mute still proceeds with no proof link.
-8. Run two parallel side-effects via `asyncio.gather(..., return_exceptions=True)`:
+5. Re-check the target's effective role via `Demote.redemote_before_fanout(..., trigger="mute")`, closing the proof-collection TOCTOU window (best-effort; the mute proceeds even if the re-demote fails).
+6. Fan `restrict_chat_member` across the group list with `fan_out(...)` while uploading proof to `cfg.proofs` concurrently (caption `parse_logmsg.proof_caption_new`). Failed calls are counted with `count_transient_errors(results)`; an upload failure degrades to no proof link.
+7. Run two parallel side-effects via `asyncio.gather(..., return_exceptions=True)`:
     - `bot.send_message(cfg.logs, mute_log, ..., reply_markup=proof_kb)`.
     - `bot.edit_message_text(summary, chat_id=prompt_chat, message_id=prompt_id, ..., reply_markup=proof_kb)` so the moderator sees the result inline.
-9. If the prompt edit fails, a fallback `msg.reply_text(summary, ..., reply_markup=proof_kb)` is issued.
+8. If the prompt edit fails, a fallback `msg.reply_text(summary, ..., reply_markup=proof_kb)` is issued.
 
 The summary text reads `<user> has been muted <duration>. Reason: <reason>. Applied to <ok>/<total> groups.`
 
@@ -221,7 +220,7 @@ The `mutes` collection stores audit rows; `active_mutes` stores the live restric
 | `until_date` | UTC datetime when the restriction expires, or `None` for permanent. |
 | `timestamp` | UTC record-write time. |
 
-Expired timed mutes are filtered at query time by `get_active_mute` and `active_mute_docs` using the predicate `$or: [{until_date: None}, {until_date: {$gt: now}}]`. There is no background cleanup job.
+Expired timed mutes are filtered at query time by `get_active_mute` and `active_mute_docs` using the predicate `$or: [{until_date: None}, {until_date: {$gt: now}}]`. A TTL index on `active_mutes.until_date` additionally auto-deletes expired timed rows from storage; permanent mutes (`None`/missing) never TTL-expire.
 
 `active_mutes` is consumed by:
 
@@ -269,6 +268,6 @@ Key behaviors to keep in mind:
 11. `execute_mute` writes both `log_mute` (audit) and `set_active_mute` (live record) so group connect can replay.
 12. `execute_unmute` refuses to fan unrestrict calls when no active mute record exists.
 13. The `until_date` value matches the value passed to `restrict_chat_member`; `None` means permanent.
-14. Expired timed mutes are excluded from `get_active_mute` and `active_mute_docs` by query-time filtering.
+14. Expired timed mutes are excluded from `get_active_mute` and `active_mute_docs` by query-time filtering, and a TTL index prunes the expired rows from storage.
 15. Federation log send failure does not roll back the mute.
 16. Newly connected groups reapply active mutes on connect via `connection.complete_join`.

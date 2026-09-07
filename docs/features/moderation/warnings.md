@@ -116,7 +116,7 @@ Proof options:
 - Tap `Skip` to warn without proof.
 - Tap `Cancel` to stop the operation.
 
-When proof is provided, `execute_warn` uploads it to the proof channel (`cfg.proofs`) using `upload_proof()` and attaches the resulting URL as a `keyboards.action_proof_kb()` inline keyboard button to all outgoing messages (the warning reply, the warning log, and, if the warn triggers an auto-ban, the auto-ban log and auto-ban notice). If upload fails, outgoing messages still send without a proof button. When proof is skipped, no upload is attempted and no proof button is shown. No proof message ID is stored in the warning database document (`warns` collection).
+When proof is provided, `execute_warn` starts the upload to the proof channel (`cfg.proofs`) using `upload_proof()` before the warn write and runs it concurrently with `warns_db.add_warn`, so the warn never waits for the proof-channel round trip; a warn-write failure cancels the in-flight upload and replies with a retry notice. The resulting URL is attached as a `keyboards.action_proof_kb()` inline keyboard button to all outgoing messages (the warning reply, the warning log, and, if the warn triggers an auto-ban, the auto-ban log and auto-ban notice). If upload fails, outgoing messages still send without a proof button. When proof is skipped, no upload is attempted and no proof button is shown. No proof message ID is stored in the warning database document (`warns` collection).
 
 ## Role hierarchy and target protection
 

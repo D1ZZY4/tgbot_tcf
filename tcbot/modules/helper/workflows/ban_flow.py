@@ -266,54 +266,21 @@ async def _execute_ban(bot: Bot, msgs: list[Message], meta: dict[str, Any]) -> N
             log.exception("active_groups failed during ban of %d", target_id)
             groups = []
 
-    # * Enforce across all connected groups + primary groups - semaphore-bounded
-    # * Re-check the target's effective role immediately before the fan-out.
-    # * The auto-demote in ``cmd_ban_start`` ran before the proof
-    # * collection window; if the target was re-promoted by a concurrent
-    # * command during that window, the role cache and the live DB would
-    # * both report them as staff. Demote again here to preserve the
-    # * role-vs-state invariant right up to the ban fan-out. Best-effort
-    # * like the entry-point demote: a failure logs and the ban still
-    # * proceeds because the user IS already banned in the DB; the chat
-    # * enforcement is the side-effect.
-    # * The lookup itself is guarded too: the ban record above is already
-    # * written, so letting a transient role-lookup failure propagate would
-    # * skip the fan-out and leave a DB-banned but chat-unenforced split
-    # * brain. Entry authorization already fail-closed; this re-check is
-    # * defense-in-depth, so proceed as non-staff with a loud log instead.
-    try:
-        pre_fanout_role = await db.users_roles.get_effective_role(target_id)
-    except Exception:
-        log.exception(
-            "_execute_ban: pre-fanout role lookup failed for target %d; "
-            "proceeding with ban anyway",
-            target_id,
-        )
-        pre_fanout_role = None
-    if pre_fanout_role:
-        try:
-            await Demote.execute(
-                bot,
-                target_id,
-                target_fname,
-                pre_fanout_role,
-                admin_id,
-                admin_fname,
-                trigger="ban",
-            )
-            log.info(
-                "_execute_ban: re-demoted target %d (role=%s) before fan-out to "
-                "close the proof-collection TOCTOU window",
-                target_id,
-                pre_fanout_role,
-            )
-        except Exception:
-            log.exception(
-                "_execute_ban: re-demote before fan-out failed for target %d "
-                "(role=%s); proceeding with ban anyway",
-                target_id,
-                pre_fanout_role,
-            )
+    # * Enforce across all connected groups + primary groups - semaphore-bounded.
+    # * The entry auto-demote ran before the proof-collection window, so
+    # * re-demote here to close the TOCTOU gap right up to the fan-out.
+    # * Best-effort like the entry-point demote: the ban record above is
+    # * already written, so enforcement proceeds regardless; the helper logs
+    # * loudly on any failure. The role read itself is L1/L2-cached (60 s
+    # * TTL), so this adds no database round trip on the hot path.
+    await Demote.redemote_before_fanout(
+        bot,
+        target_id,
+        target_fname,
+        admin_id,
+        admin_fname,
+        trigger="ban",
+    )
     _primary_ids = [cid for cid in (cfg.main_group, cfg.exec_group) if cid]
     _existing_ids = {grp["chat_id"] for grp in groups}
     for _pid in _primary_ids:

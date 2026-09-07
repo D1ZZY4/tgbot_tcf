@@ -110,7 +110,7 @@ def fmt_duration(td: timedelta | None) -> str:
 # ────────────────────────── Mute executor ───────────────────────── #
 
 
-async def _execute_mute(bot: Bot, update: Update, meta: dict) -> None:
+async def _execute_mute(bot: Bot, update: Update, meta: dict[str, Any]) -> None:
     """Apply a federation-wide mute across all connected groups and edit the prompt to a summary."""
     # * Defensive .get(): _exec_mute copies whatever mute_* keys survived in
     # * user_data, so a stale or partially-cleared state must end here with
@@ -199,61 +199,55 @@ async def _execute_mute(bot: Bot, update: Update, meta: dict) -> None:
         except Exception as exc:
             log.debug("_execute_mute DB-fail edit failed: %s", exc)
         return
-    # * Re-check the target's effective role immediately before the
-    # * restrict fan-out. The auto-demote in ``cmd_mute`` ran before the
-    # * proof collection window; if the target was re-promoted by a
-    # * concurrent command during that window, the role cache and the
-    # * live DB would both report them as staff. Demote again here to
-    # * preserve the role-vs-state invariant right up to the restrict
-    # * fan-out. Best-effort like the entry-point demote.
-    # * The lookup itself is guarded too: entry authorization already
-    # * fail-closed, and this re-check is defense-in-depth, so a transient
-    # * lookup failure logs loudly and proceeds as non-staff instead of
-    # * aborting an authorized mute with no reply.
-    try:
-        pre_fanout_role = await db.users_roles.get_effective_role(target_id)
-    except Exception:
-        log.exception(
-            "_execute_mute: pre-fanout role lookup failed for target %d; "
-            "proceeding with mute anyway",
-            target_id,
-        )
-        pre_fanout_role = None
-    if pre_fanout_role:
-        try:
-            await Demote.execute(
-                bot,
-                target_id,
-                target_fname,
-                pre_fanout_role,
-                admin_id,
-                admin_fname,
-                trigger="mute",
-            )
-            log.info(
-                "_execute_mute: re-demoted target %d (role=%s) before "
-                "fan-out to close the proof-collection TOCTOU window",
-                target_id,
-                pre_fanout_role,
-            )
-        except Exception:
-            log.exception(
-                "_execute_mute: re-demote before fan-out failed for target %d "
-                "(role=%s); proceeding with mute anyway",
-                target_id,
-                pre_fanout_role,
-            )
-    results = await fan_out(
-        [
-            bot.restrict_chat_member(
-                grp.get("chat_id", 0),
-                target_id,
-                permissions=perms,
-                until_date=until,
-            )
-            for grp in groups
-        ]
+    # * The entry auto-demote ran before the reason/proof window, so
+    # * re-demote here to close the TOCTOU gap before the restrict fan-out.
+    # * Best-effort like the entry-point demote; entry authorization already
+    # * failed closed, so a lookup failure logs loudly and proceeds.
+    await Demote.redemote_before_fanout(
+        bot,
+        target_id,
+        target_fname,
+        admin_id,
+        admin_fname,
+        trigger="mute",
     )
+    restrict_coros = [
+        bot.restrict_chat_member(
+            grp.get("chat_id", 0),
+            target_id,
+            permissions=perms,
+            until_date=until,
+        )
+        for grp in groups
+    ]
+    # * Restrict enforcement and proof upload run concurrently: the summary
+    # * below needs both results, but neither depends on the other, so
+    # * awaiting them serially would add a full proof-channel round trip to
+    # * every mute with evidence. An upload failure still degrades to no
+    # * proof link, exactly as before.
+    proof_link: str | None = None
+    if proof_msgs:
+        pc, pt = cfg.proofs
+        proof_caption = parse_logmsg.proof_caption_new(
+            target_id, admin_id, admin_fname, utc_now()
+        )
+        fanout_results, upload_result = await asyncio.gather(
+            fan_out(restrict_coros),
+            upload_proof(bot, proof_msgs, proof_caption, pc, pt),
+            return_exceptions=True,
+        )
+        if isinstance(fanout_results, BaseException):
+            raise fanout_results
+        results = fanout_results
+        if isinstance(upload_result, BaseException):
+            log.warning("Mute proof upload skipped for target=%d", target_id)
+            proof_msg_id = None
+        else:
+            proof_msg_id = upload_result
+        if proof_msg_id:
+            proof_link = message_link(pc, proof_msg_id, pt)
+    else:
+        results = await fan_out(restrict_coros)
     failed = count_transient_errors(results)
     if failed:
         log.error(
@@ -262,21 +256,6 @@ async def _execute_mute(bot: Bot, update: Update, meta: dict) -> None:
             len(groups),
             target_id,
         )
-
-    admin_fname = meta.get("mute_admin_fname", "Admin")
-
-    proof_link: str | None = None
-    if proof_msgs:
-        try:
-            pc, pt = cfg.proofs
-            caption = parse_logmsg.proof_caption_new(
-                target_id, admin_id, admin_fname, utc_now()
-            )
-            pmid = await upload_proof(bot, proof_msgs, caption, pc, pt)
-            if pmid:
-                proof_link = message_link(pc, pmid, pt)
-        except Exception:
-            log.warning("Mute proof upload skipped for target=%d", target_id)
 
     proof_kb = keyboards.action_proof_kb(target_id, proof_link)
     summary = (

@@ -61,12 +61,24 @@ await Demote.execute(bot,
                      executor_id, executor_fname,
                      *,
                      trigger: str | None = None)              # bool
+await Demote.auto_demote_or_abort(msg, bot,
+                                  target_id, target_display, target_role,
+                                  executor_id, executor_fname,
+                                  *,
+                                  trigger: str)               # bool
+await Demote.redemote_before_fanout(bot,
+                                    target_id, target_fname,
+                                    executor_id, executor_fname,
+                                    *,
+                                    trigger: str)             # None
 ```
 
 | Member | Purpose |
 |---|---|
 | `Demote.remove_role(target_id, target_role)` | Deletes the matching record from `tc_admins` (when `target_role == "admin"`) or `tc_roles` (Developer/Tester). Returns True if a record was actually removed. |
 | `Demote.execute(...)` | Removes the role, posts the federation log, and DMs the target. Returns True if the role was actually removed. Supports both manual and auto-demote callers via the `trigger` keyword. |
+| `Demote.auto_demote_or_abort(...)` | Runs `execute` for a role-holding entry target; on failure replies to the executor and returns False so the caller aborts before enforcing. Shared by the ban/kick/mute entry handlers. |
+| `Demote.redemote_before_fanout(...)` | Re-reads the live effective role immediately before enforcement and runs `execute` when the target holds one, closing the proof-collection TOCTOU window. Best-effort: every failure logs loudly and the caller always proceeds. Shared by the ban/kick/mute executors. |
 
 The `trigger` parameter controls only the DM body wording:
 
@@ -103,20 +115,23 @@ Callback data: `demote_confirm:<target_id>` and `demote_cancel:<target_id>`.
 
 ## Auto-demote flow (ban / kick / mute)
 
-`/tcban`, `/tckick`, and `/tcmute` entry handlers call `Demote.execute(...)` with the appropriate trigger after `resolve_and_check` confirms the executor outranks a role-holding target, before the actual moderation action.
+`/tcban`, `/tckick`, and `/tcmute` entry handlers call `Demote.auto_demote_or_abort(...)` with the appropriate trigger after `resolve_and_check` confirms the executor outranks a role-holding target, before the actual moderation action. On demote failure the helper replies and returns False so the entry aborts without enforcing.
 
 ```python
-if target_role:
-    await Demote.execute(
-        ctx.bot,
-        target_id,
-        target_fname or str(target_id),
-        target_role,
-        admin.id,
-        admin.first_name,
-        trigger="ban",  # or "kick" or "mute"
-    )
+if target_role and not await Demote.auto_demote_or_abort(
+    msg,
+    ctx.bot,
+    target_id,
+    target_fname or str(target_id),
+    target_role,
+    admin.id,
+    admin.first_name,
+    trigger="ban",  # or "kick" or "mute"
+):
+    return ConversationHandler.END
 ```
+
+The ban, kick, and mute executors then call `Demote.redemote_before_fanout(...)` with the same trigger immediately before enforcement, closing the TOCTOU window between the entry demote and the fan-out (a concurrent promotion during reason/proof collection). The re-demote is best-effort: the moderation record already exists at that point, so enforcement always proceeds and failures only log loudly.
 
 The warn-limit path above is an edge case; staff should not normally accumulate warnings.
 

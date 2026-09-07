@@ -88,20 +88,20 @@ async def execute_warn(
     admin_fname = admin.first_name
     lc, lt = cfg.logs
 
-    proof_link: str | None = None
+    # * Upload proof concurrently with the warn write: neither depends on the
+    # * other, so awaiting them serially would add a full proof-channel round
+    # * trip to every warn with evidence. On a warn-write failure the upload
+    # * is cancelled so the failure reply stays immediate; an upload failure
+    # * still degrades to no proof link, exactly as before.
+    proof_task: asyncio.Task[int | None] | None = None
+    pc, pt = cfg.proofs
     if proof_msgs:
-        try:
-            pc, pt = cfg.proofs
-            caption = parse_logmsg.proof_caption_new(
-                target_id, admin_id, admin_fname, utc_now()
-            )
-            warn_proof_id = await upload_proof(ctx.bot, proof_msgs, caption, pc, pt)
-            if warn_proof_id:
-                proof_link = message_link(pc, warn_proof_id, pt)
-        except Exception:
-            log.warning("Warn proof upload skipped for target=%d", target_id)
-
-    proof_kb = keyboards.action_proof_kb(target_id, proof_link)
+        proof_caption = parse_logmsg.proof_caption_new(
+            target_id, admin_id, admin_fname, utc_now()
+        )
+        proof_task = asyncio.create_task(
+            upload_proof(ctx.bot, proof_msgs, proof_caption, pc, pt)
+        )
 
     warn_limit = cfg.warn_limit
     # * Fail closed with a retry reply: without the stored warn the
@@ -110,6 +110,9 @@ async def execute_warn(
     try:
         count = await db.warns_db.add_warn(target_id, reason_text, admin_id, chat_id)
     except Exception:
+        if proof_task is not None and not proof_task.done():
+            proof_task.cancel()
+            await asyncio.gather(proof_task, return_exceptions=True)
         log.exception(
             "add_warn DB write failed for target=%d chat=%d", target_id, chat_id
         )
@@ -118,6 +121,21 @@ async def execute_warn(
         except Exception as exc:
             log.debug("execute_warn DB-fail reply failed: %s", exc)
         return
+
+    proof_link: str | None = None
+    if proof_task is not None:
+        try:
+            warn_proof_id = await proof_task
+        except asyncio.CancelledError:
+            proof_task.cancel()
+            raise
+        except Exception:
+            log.warning("Warn proof upload skipped for target=%d", target_id)
+            warn_proof_id = None
+        if warn_proof_id:
+            proof_link = message_link(pc, warn_proof_id, pt)
+
+    proof_kb = keyboards.action_proof_kb(target_id, proof_link)
     log_text = parse_logmsg.warn_log(
         target_id,
         target_name,

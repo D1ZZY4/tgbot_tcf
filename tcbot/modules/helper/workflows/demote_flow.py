@@ -30,6 +30,8 @@ class Demote:
     * ``execute(trigger=None)`` runs the manual /tcdemote path.
     * ``execute(trigger="ban")`` / ``"kick"`` / ``"mute"`` runs the auto-demote
       path used by the ban, kick, and mute flows before the actual action.
+    * ``redemote_before_fanout(trigger=...)`` re-checks the live role right
+      before enforcement, closing the proof-collection TOCTOU window.
     """
 
     @staticmethod
@@ -110,6 +112,67 @@ class Demote:
                     "Demote log/DM send failed for target=%d: %s", target_id, result
                 )
         return True
+
+    @classmethod
+    async def redemote_before_fanout(
+        cls,
+        bot: Bot,
+        target_id: int,
+        target_fname: str,
+        executor_id: int,
+        executor_fname: str,
+        *,
+        trigger: str,
+    ) -> None:
+        """Best-effort TOCTOU re-demote immediately before a moderation fan-out.
+
+        Shared by the ban/kick/mute executors, whose pre-fan-out blocks were
+        identical apart from the trigger noun. The entry-point auto-demote ran
+        before the reason/proof collection window, so a concurrent promotion
+        during that window would otherwise survive into enforcement. Re-reads
+        the live effective role and runs :meth:`execute` when the target holds
+        one; every failure path logs loudly and the caller always proceeds,
+        because the moderation record above already exists and enforcement is
+        the priority. Entry authorization already failed closed, so this
+        re-check is defense-in-depth state repair, never a gate.
+        """
+        try:
+            pre_fanout_role = await db.users_roles.get_effective_role(target_id)
+        except Exception:
+            log.exception(
+                "Pre-fanout role lookup failed for target %d; "
+                "proceeding with %s anyway",
+                target_id,
+                trigger,
+            )
+            return
+        if not pre_fanout_role:
+            return
+        try:
+            await cls.execute(
+                bot,
+                target_id,
+                target_fname,
+                pre_fanout_role,
+                executor_id,
+                executor_fname,
+                trigger=trigger,
+            )
+            log.info(
+                "Re-demoted target %d (role=%s) before %s fan-out; "
+                "proof-collection TOCTOU window closed",
+                target_id,
+                pre_fanout_role,
+                trigger,
+            )
+        except Exception:
+            log.exception(
+                "Re-demote before %s fan-out failed for target %d (role=%s); "
+                "proceeding anyway",
+                trigger,
+                target_id,
+                pre_fanout_role,
+            )
 
     @classmethod
     async def auto_demote_or_abort(

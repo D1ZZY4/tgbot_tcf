@@ -111,7 +111,7 @@ flowchart TD
 | Module instances | `reason = BuildReason("kick")`, `proof = BuildProof("kick")` |
 | Executor | `execute_kick(update, ctx, target_id, target_name, reason_text, proof_msgs=None)` |
 
-Kick is current-group-only. It bans the user from the current chat and immediately unbans them so the action behaves as a kick rather than a permanent group ban. If `proof_msgs` is provided, proof media is uploaded to the proof channel and the resulting link is shown as an inline keyboard button on the reply and log messages.
+Kick is current-group-only. It bans the user from the current chat and immediately unbans them so the action behaves as a kick rather than a permanent group ban. If `proof_msgs` is provided, the proof upload starts before enforcement and runs concurrently with `ban_chat_member`, so the kick never waits for the proof-channel round trip; the resulting link is shown as an inline keyboard button on the reply and log messages. A ban failure cancels the in-flight upload and replies with a permissions/retry hint.
 
 ## Mute: `muting_flow.py`
 
@@ -153,8 +153,7 @@ flowchart TD
     Proof -->|skip| Exec
     Proof -->|cancel| End
     Exec -->|persist record first, abort on DB failure| Stored[log_mute + set_active_mute]
-    Stored -->|fan_out restrict to all groups| Groups[Active connected groups]
-    Groups -->|upload proof if any| ProofChat[Proof channel/chat]
+    Stored -->|fan_out restrict + upload proof concurrently| Groups[Active connected groups]
     Groups -->|post audit log| LogChat[Log channel]
     Groups -->|edit prompt summary| Summary[Moderator summary]
     Stored -->|re-applied on join| Join[greeting._handle_member]
@@ -169,9 +168,9 @@ flowchart TD
 | Factory | `warn_conversation(entry_fn, entry_filter, escape_filter=None)` |
 | Module instances | `reason = BuildReason("warn", skip_allowed=False)`, `proof = BuildProof("warn")` |
 | Limit | `cfg.warn_limit` (env var `WARN_LIMIT`, default 3, minimum 1) |
-| Executors | `execute_warn(update, ctx, target_id, target_name, reason_text, proof_desc=None, proof_msgs=None)`, `execute_unwarn`, `execute_warnlist`, `execute_resetwarns` |
+| Executors | `execute_warn(update, ctx, target_id, target_name, reason_text, proof_msgs=None)`, `execute_unwarn`, `execute_warnlist`, `execute_resetwarns` |
 
-Warns are tracked per `(user_id, chat_id)`. At `cfg.warn_limit` (per-group) or `cfg.fed_warn_limit` (federation-wide), the flow issues a **federation-wide ban** via `fan_out()` to all active connected groups plus primary groups, creates a ban document in the `bans` collection, and then clears warnings across all groups with `clear_all_warns` (only after at least one group ban succeeds). If `proof_msgs` is provided, proof media is uploaded to the proof channel and the resulting link is attached as an inline keyboard button to all outgoing messages (auto-ban log, replies, non-auto-ban log).
+Warns are tracked per `(user_id, chat_id)`. At `cfg.warn_limit` (per-group) or `cfg.fed_warn_limit` (federation-wide), the flow issues a **federation-wide ban** via `fan_out()` to all active connected groups plus primary groups, creates a ban document in the `bans` collection, and then clears warnings across all groups with `clear_all_warns` (only after at least one group ban succeeds). If `proof_msgs` is provided, the proof upload starts before the warn write and runs concurrently with `warns_db.add_warn`, so the warn never waits for the proof-channel round trip; the resulting link is attached as an inline keyboard button to all outgoing messages (auto-ban log, replies, non-auto-ban log). A warn-write failure cancels the in-flight upload and replies with a retry notice.
 
 ## Unban: `unban_flow.py`
 

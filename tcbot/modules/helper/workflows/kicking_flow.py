@@ -23,7 +23,7 @@ from tcbot.utils.time_and_date import utc_now
 if TYPE_CHECKING:
     from collections.abc import Callable
 
-    from telegram import Update
+    from telegram import Message, Update
     from telegram.ext import ContextTypes
     from telegram.ext.filters import BaseFilter
 
@@ -47,7 +47,7 @@ async def execute_kick(
     target_id: int,
     target_name: str,
     reason_text: str,
-    proof_msgs: list | None = None,
+    proof_msgs: list[Message] | None = None,
 ) -> None:
     """Kick (ban then immediately unban) a user from the current group."""
     msg = update.effective_message
@@ -60,23 +60,36 @@ async def execute_kick(
     admin_id = effective_user.id
     admin_fname = effective_user.first_name
 
-    proof_link: str | None = None
+    # * Upload proof concurrently with enforcement: the ban below must not wait
+    # * for the proof-channel round trip. The task is awaited after the ban
+    # * lands and before the keyboards are built; on ban failure it is
+    # * cancelled so no orphan upload outlives the executor. An upload failure
+    # * still degrades to no proof link, exactly as before.
+    proof_task: asyncio.Task[int | None] | None = None
+    pc, pt = cfg.proofs
     if proof_msgs:
-        try:
-            pc, pt = cfg.proofs
-            caption = parse_logmsg.proof_caption_new(
-                target_id, admin_id, admin_fname, utc_now()
-            )
-            proof_msg_id = await upload_proof(ctx.bot, proof_msgs, caption, pc, pt)
-            if proof_msg_id:
-                proof_link = message_link(pc, proof_msg_id, pt)
-        except Exception:
-            log.warning("Kick proof upload skipped for target=%d", target_id)
-
-    proof_kb = keyboards.action_proof_kb(target_id, proof_link)
+        caption = parse_logmsg.proof_caption_new(
+            target_id, admin_id, admin_fname, utc_now()
+        )
+        proof_task = asyncio.create_task(
+            upload_proof(ctx.bot, proof_msgs, caption, pc, pt)
+        )
 
     try:
         await ctx.bot.ban_chat_member(chat_id, target_id)
+        proof_link: str | None = None
+        if proof_task is not None:
+            try:
+                proof_msg_id = await proof_task
+            except asyncio.CancelledError:
+                proof_task.cancel()
+                raise
+            except Exception:
+                log.warning("Kick proof upload skipped for target=%d", target_id)
+                proof_msg_id = None
+            if proof_msg_id:
+                proof_link = message_link(pc, proof_msg_id, pt)
+        proof_kb = keyboards.action_proof_kb(target_id, proof_link)
         chat_title = effective_chat.title or str(chat_id)
         lc, lt = cfg.logs
         log_text = parse_logmsg.kick_log(
@@ -94,51 +107,18 @@ async def execute_kick(
         # * runs *after* the unban completes so we can append a warning if
         # * the unban failed -- otherwise the admin would see "kicked" while
         # * the user is still banned.
-        # * Re-check the target's effective role immediately before the
-        # * ban-then-unban fan-out. The auto-demote in ``cmd_kick`` ran
-        # * before the proof collection window; if the target was
-        # * re-promoted by a concurrent command during that window, the
-        # * role cache and the live DB would both report them as staff.
-        # * Demote again here to preserve the role-vs-state invariant right
-        # * up to the kick fan-out. Best-effort like the entry-point demote.
-        # * The lookup itself is guarded too: ban_chat_member above already
-        # * ran, so letting a transient role-lookup failure propagate would
-        # * skip the unban and turn this kick into a ban with a misleading
-        # * error reply. Entry authorization already fail-closed; this
-        # * re-check is defense-in-depth, so proceed as non-staff instead.
-        try:
-            pre_fanout_role = await db.users_roles.get_effective_role(target_id)
-        except Exception:
-            log.exception(
-                "execute_kick: pre-fanout role lookup failed for target %d; "
-                "proceeding with kick anyway",
-                target_id,
-            )
-            pre_fanout_role = None
-        if pre_fanout_role:
-            try:
-                await Demote.execute(
-                    ctx.bot,
-                    target_id,
-                    target_name,
-                    pre_fanout_role,
-                    admin_id,
-                    admin_fname,
-                    trigger="kick",
-                )
-                log.info(
-                    "execute_kick: re-demoted target %d (role=%s) before "
-                    "fan-out to close the proof-collection TOCTOU window",
-                    target_id,
-                    pre_fanout_role,
-                )
-            except Exception:
-                log.exception(
-                    "execute_kick: re-demote before fan-out failed for target "
-                    "%d (role=%s); proceeding with kick anyway",
-                    target_id,
-                    pre_fanout_role,
-                )
+        # * The entry auto-demote ran before the proof-collection window, so
+        # * re-demote here to close the TOCTOU gap before the unban fan-out.
+        # * Best-effort: ban_chat_member above already ran, so a lookup
+        # * failure must not skip the unban and turn this kick into a ban.
+        await Demote.redemote_before_fanout(
+            ctx.bot,
+            target_id,
+            target_name,
+            admin_id,
+            admin_fname,
+            trigger="kick",
+        )
         unban_result, log_kick_result, log_send_result = await asyncio.gather(
             ctx.bot.unban_chat_member(chat_id, target_id, only_if_banned=True),
             db.kicks_db.log_kick(target_id, chat_id, reason_text, admin_id),
@@ -181,6 +161,11 @@ async def execute_kick(
         except Exception as exc:
             log.debug("Kick reply_text failed: %s", exc)
     except Exception:
+        # * Ban failed while the proof upload may still be in flight: cancel
+        # * it so no orphan upload outlives this executor.
+        if proof_task is not None and not proof_task.done():
+            proof_task.cancel()
+            await asyncio.gather(proof_task, return_exceptions=True)
         log.exception("Kick failed for %s in %s", target_id, chat_id)
         try:
             await msg.reply_text(
