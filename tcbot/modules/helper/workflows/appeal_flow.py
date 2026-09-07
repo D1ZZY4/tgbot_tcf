@@ -22,6 +22,7 @@ from telegram import (
     Update,
     User,
 )
+from telegram.constants import KeyboardButtonStyle
 from telegram.ext import (
     CallbackQueryHandler,
     ContextTypes,
@@ -190,10 +191,14 @@ class BuildAppeal:
             [
                 [
                     InlineKeyboardButton(
-                        "Approve", callback_data=f"appeal_approve_{ban_id}"
+                        "Approve",
+                        callback_data=f"appeal_approve_{ban_id}",
+                        style=KeyboardButtonStyle.SUCCESS,
                     ),
                     InlineKeyboardButton(
-                        "Reject", callback_data=f"appeal_reject_{ban_id}"
+                        "Reject",
+                        callback_data=f"appeal_reject_{ban_id}",
+                        style=KeyboardButtonStyle.DANGER,
                     ),
                 ]
             ]

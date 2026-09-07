@@ -22,6 +22,7 @@ useful without becoming a checklist of every keystroke.
 |---|---|
 | Source of truth | `tcbot/modules/helper/keyboards.py` for reusable builders. Workflow-local builders are allowed when callback state is private to the workflow (`stats_flow.py`, `check_flow.py`, conversation flows). |
 | Labels | Title case, short, plain English. No pictograph emoji. `«` and `»` are allowed for navigation arrows. |
+| Colors | Semantic `style` on decision buttons only: `SUCCESS` (green) for Approve, `DANGER` (red) for Reject and destructive Confirm, `PRIMARY` (blue) for continue/select steps (`Connect`, role options, `Skip`). Cancel, Back, navigation, menus, toggles, numbered drill-ins, and URL buttons stay unstyled. Older clients render the same buttons without color, so styling never carries meaning alone. |
 | Back navigation | `« Back` always returns one step. Nested views use `back_to_module_kb` / `back_to_help_kb` / `back_to_help_cmd_kb`. |
 | Pagination | `« Prev` and `Next »` on a single nav row, then numbered drill-in buttons three per row, then optional global actions, then `« Back`. |
 | Confirmation | Positive action first, `Cancel` second on the same row: `[Confirm] [Cancel]`, `[Approve] [Reject]`, `[Connect] [Cancel]`. |
@@ -88,6 +89,8 @@ record type.
 ```text
 [ Confirm ]    [ Cancel ]
 ```
+
+`Confirm` uses `DANGER` when it destroys state (demote) and the decision pair uses `SUCCESS` / `DANGER` (`Approve` / `Reject`); `Cancel` stays neutral. The start-menu groups toggle shares one row with `« Back` (`[ Details ] [ « Back ]`), as do search results actions (`[ New Search ] [ Cancel ]`).
 
 ### Module help with sub-sections
 

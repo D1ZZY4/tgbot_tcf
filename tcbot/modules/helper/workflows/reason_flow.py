@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram.constants import KeyboardButtonStyle
 from telegram.ext import (
     CallbackQueryHandler,
     ContextTypes,
@@ -91,7 +92,9 @@ class BuildReason:
         if self.skip_allowed:
             buttons.append(
                 InlineKeyboardButton(
-                    self.skip_label, callback_data=f"{self.action}_skip_reason"
+                    self.skip_label,
+                    callback_data=f"{self.action}_skip_reason",
+                    style=KeyboardButtonStyle.PRIMARY,
                 )
             )
         buttons.append(

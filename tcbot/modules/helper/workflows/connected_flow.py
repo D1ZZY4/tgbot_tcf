@@ -20,7 +20,7 @@ from telegram import (
     InlineKeyboardMarkup,
     Update,
 )
-from telegram.constants import ChatMemberStatus
+from telegram.constants import ChatMemberStatus, KeyboardButtonStyle
 
 from tcbot import cfg
 from tcbot import database as db
@@ -164,7 +164,9 @@ class BuildConnection:
             [
                 [
                     InlineKeyboardButton(
-                        self.join_label, callback_data=self.join_callback
+                        self.join_label,
+                        callback_data=self.join_callback,
+                        style=KeyboardButtonStyle.PRIMARY,
                     ),
                     InlineKeyboardButton(
                         self.cancel_label, callback_data=self.cancel_callback

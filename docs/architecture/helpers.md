@@ -107,7 +107,7 @@ Main groups:
 | Groups | `groups_menu_kb`, `tcgroups_kb` |
 | Stats | `main_kb` (in `stats_flow`), `back_kb` (in `stats_flow`) |
 
-See [keyboard styles](../reference/keyboard-styles.md) for layout and callback-data conventions.
+See [keyboard styles](../reference/keyboard-styles.md) for layout, color, and callback-data conventions (semantic `style`: `SUCCESS` for Approve, `DANGER` for Reject/destructive Confirm, `PRIMARY` for continue/select steps; everything else neutral).
 
 ## `identity.py`
 

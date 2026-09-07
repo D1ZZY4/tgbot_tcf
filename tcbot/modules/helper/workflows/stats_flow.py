@@ -586,10 +586,10 @@ class Stats:
             for i in range(0, len(num_btns), _BTNS_PER_ROW)
         ]
         rows.append(
-            [InlineKeyboardButton("New Search", callback_data="stats_bans_search")]
-        )
-        rows.append(
-            [InlineKeyboardButton("Cancel", callback_data="stats_search_cancel")]
+            [
+                InlineKeyboardButton("New Search", callback_data="stats_bans_search"),
+                InlineKeyboardButton("Cancel", callback_data="stats_search_cancel"),
+            ]
         )
         return InlineKeyboardMarkup(rows)
 

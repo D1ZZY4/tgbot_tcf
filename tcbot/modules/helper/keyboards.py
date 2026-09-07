@@ -9,12 +9,20 @@ from __future__ import annotations
 import logging
 
 from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.constants import KeyboardButtonStyle
 
 from tcbot import cfg
 from tcbot import database as db
 from tcbot.modules.helper.parse_link import appeal_deep_link
 
 log = logging.getLogger(__name__)
+
+# * Semantic button colors (PTB 22.7+, Bot API style field; older clients
+# * render the same buttons without color, so styling is purely additive):
+# * SUCCESS marks a final approval, DANGER a rejection or destructive
+# * confirm, PRIMARY a continue/select step into a flow. Cancel, Back,
+# * navigation, menus, toggles, and URL buttons stay unstyled (neutral).
+# * See docs/reference/keyboard-styles.md for the full convention.
 
 
 def _https_url(url: str, label: str) -> str | None:
@@ -113,7 +121,9 @@ def promote_role_kb(target_id: int, available_roles: list[str]) -> InlineKeyboar
     """Role selection keyboard shown when /tcpromote is used without a role argument."""
     buttons = [
         InlineKeyboardButton(
-            db.users_roles.ROLE_LABEL[r], callback_data=f"promo_role:{r}:{target_id}"
+            db.users_roles.ROLE_LABEL[r],
+            callback_data=f"promo_role:{r}:{target_id}",
+            style=KeyboardButtonStyle.PRIMARY,
         )
         for r in available_roles
         if r in db.users_roles.ROLE_LABEL
@@ -133,7 +143,9 @@ def demote_confirm_kb(target_id: int) -> InlineKeyboardMarkup:
         [
             [
                 InlineKeyboardButton(
-                    "Confirm", callback_data=f"demote_confirm:{target_id}"
+                    "Confirm",
+                    callback_data=f"demote_confirm:{target_id}",
+                    style=KeyboardButtonStyle.DANGER,
                 ),
                 InlineKeyboardButton(
                     "Cancel", callback_data=f"demote_cancel:{target_id}"
@@ -149,10 +161,14 @@ def promo_decision_kb(request_id: str) -> InlineKeyboardMarkup:
         [
             [
                 InlineKeyboardButton(
-                    "Approve", callback_data=f"promo_approve:{request_id}"
+                    "Approve",
+                    callback_data=f"promo_approve:{request_id}",
+                    style=KeyboardButtonStyle.SUCCESS,
                 ),
                 InlineKeyboardButton(
-                    "Reject", callback_data=f"promo_reject:{request_id}"
+                    "Reject",
+                    callback_data=f"promo_reject:{request_id}",
+                    style=KeyboardButtonStyle.DANGER,
                 ),
             ]
         ]
@@ -372,7 +388,7 @@ def groups_menu_kb(*, detailed: bool) -> InlineKeyboardMarkup:
         callback_data="menu_groups_simple" if detailed else "menu_groups_details",
     )
     back = InlineKeyboardButton("« Back", callback_data="back_to_start")
-    return InlineKeyboardMarkup([[toggle], [back]])
+    return InlineKeyboardMarkup([[toggle, back]])
 
 
 def tcgroups_kb(*, detailed: bool) -> InlineKeyboardMarkup:

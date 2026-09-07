@@ -17,6 +17,7 @@ from telegram import (
     InputMediaVideo,
     Message,
 )
+from telegram.constants import KeyboardButtonStyle
 
 from tcbot.modules.helper.formatter import bold
 
@@ -41,7 +42,9 @@ class BuildProof:
         if self.skip_allowed:
             buttons.append(
                 InlineKeyboardButton(
-                    self.skip_label, callback_data=f"{self.action}_skip_proof"
+                    self.skip_label,
+                    callback_data=f"{self.action}_skip_proof",
+                    style=KeyboardButtonStyle.PRIMARY,
                 )
             )
         buttons.append(
