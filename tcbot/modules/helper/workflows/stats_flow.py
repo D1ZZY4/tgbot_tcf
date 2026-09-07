@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from telegram import (
     Bot,
@@ -26,7 +26,7 @@ from tcbot.modules.helper.extraction import (
     identity_needs_refresh,
     launch_identity_refresh,
 )
-from tcbot.modules.helper.formatter import bold, code, esc, mention, user_ref
+from tcbot.utils.formatter import bold, code, esc, mention, user_ref
 from tcbot.utils.pagination import date_or_unknown, nav_row, paginate
 from tcbot.utils.time_and_date import TELEGRAM_LOOKUP_TIMEOUT
 
@@ -102,36 +102,46 @@ def _back_main() -> list[InlineKeyboardButton]:
 # ─────────────────────── Keyboard builders ──────────────────────── #
 
 
-def main_kb() -> InlineKeyboardMarkup:
-    """Top-level ``/tcstats`` menu: Staff / Users / Chats / Bans drill-downs."""
-    return InlineKeyboardMarkup(
+def main_kb(*, show_users: bool = False) -> InlineKeyboardMarkup:
+    """Top-level ``/tcstats`` menu: Staff / Bans / Chats drill-downs.
+
+    The ``Users`` list carries every cached user ID, so its button is shown
+    only to the Owner/Founder (row 3); everyone else gets rows 1-2 only.
+    The ``stats_users`` callbacks enforce the same gate, so a stale or
+    crafted tap without the button still cannot open the list.
+    """
+    rows = [
         [
+            InlineKeyboardButton(
+                "Staff Roster",
+                callback_data="stats_admins",
+                style=KeyboardButtonStyle.PRIMARY,
+            ),
+            InlineKeyboardButton(
+                "User Bans",
+                callback_data="stats_bans:0",
+                style=KeyboardButtonStyle.PRIMARY,
+            ),
+        ],
+        [
+            InlineKeyboardButton(
+                "Connected Chats",
+                callback_data="stats_chats:0",
+                style=KeyboardButtonStyle.PRIMARY,
+            ),
+        ],
+    ]
+    if show_users:
+        rows.append(
             [
-                InlineKeyboardButton(
-                    "Staff Roster",
-                    callback_data="stats_admins",
-                    style=KeyboardButtonStyle.PRIMARY,
-                ),
                 InlineKeyboardButton(
                     "Users",
                     callback_data="stats_users:0",
                     style=KeyboardButtonStyle.PRIMARY,
-                ),
-            ],
-            [
-                InlineKeyboardButton(
-                    "Connected Chats",
-                    callback_data="stats_chats:0",
-                    style=KeyboardButtonStyle.PRIMARY,
-                ),
-                InlineKeyboardButton(
-                    "User Bans",
-                    callback_data="stats_bans:0",
-                    style=KeyboardButtonStyle.PRIMARY,
-                ),
-            ],
-        ]
-    )
+                )
+            ]
+        )
+    return InlineKeyboardMarkup(rows)
 
 
 def back_kb() -> InlineKeyboardMarkup:
@@ -203,8 +213,27 @@ class Stats:
     # ── Main overview ────────────────────────────────────────────────────
 
     @classmethod
-    async def main(cls) -> tuple[str, InlineKeyboardMarkup]:
-        """Federation overview: Founder, staff total, user cache, bans, chats."""
+    async def main(
+        cls, *, viewer_id: int | None = None
+    ) -> tuple[str, InlineKeyboardMarkup]:
+        """Federation overview: Founder, staff total, user cache, bans, chats.
+
+        When ``viewer_id`` belongs to the Owner/Founder, the menu gains the
+        ``Users`` button (row 3); the ``stats_users`` callbacks enforce the
+        same gate. A failed viewer lookup hides the button (fail closed).
+        """
+        _reads: list[Any] = [
+            db.users_roles.get_owner_id(),
+            db.users_roles.admin_count(),
+            db.users_roles.all_by_role("developer"),
+            db.users_roles.all_by_role("tester"),
+            db.bans_db.active_ban_count(),
+            db.groups_db.active_group_count(),
+            db.users_cache.total_users(),
+        ]
+        if viewer_id is not None:
+            _reads.append(db.users_roles.is_owner(viewer_id))
+            _reads.append(db.users_roles.get_effective_role(viewer_id))
         (
             owner_id,
             admin_count,
@@ -213,16 +242,8 @@ class Stats:
             ban_count,
             group_count,
             user_count,
-        ) = await asyncio.gather(
-            db.users_roles.get_owner_id(),
-            db.users_roles.admin_count(),
-            db.users_roles.all_by_role("developer"),
-            db.users_roles.all_by_role("tester"),
-            db.bans_db.active_ban_count(),
-            db.groups_db.active_group_count(),
-            db.users_cache.total_users(),
-            return_exceptions=True,
-        )
+            *viewer_reads,
+        ) = await asyncio.gather(*_reads, return_exceptions=True)
         owner_id = (
             0 if isinstance(owner_id, BaseException) else cast("int | None", owner_id)
         )
@@ -239,6 +260,18 @@ class Stats:
             group_count = 0
         if isinstance(user_count, BaseException):
             user_count = 0
+
+        # * Owner/Founder-only Users button. Cancellation propagates; any
+        # * other viewer-lookup failure hides the button (fail closed) while
+        # * the overview itself still renders.
+        show_users = False
+        if viewer_reads:
+            owner_check, role_check = viewer_reads
+            if isinstance(owner_check, asyncio.CancelledError):
+                raise owner_check
+            if isinstance(role_check, asyncio.CancelledError):
+                raise role_check
+            show_users = (owner_check is True) or (role_check == "founder")
 
         # Fetch owner mention data in parallel with building the response
         if owner_id:
@@ -271,7 +304,7 @@ class Stats:
             f"Active bans: {bold(str(ban_count))}\n"
             f"Connected chats: {bold(str(group_count))}"
         )
-        return text, main_kb()
+        return text, main_kb(show_users=show_users)
 
     # ── Staff roster ─────────────────────────────────────────────────────
 

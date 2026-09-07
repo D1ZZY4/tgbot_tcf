@@ -23,9 +23,9 @@ flowchart TD
 ## Purpose
 
 `/tcstats` is the federation's read-only overview. A single inline keyboard
-opens four drill-down panes (Staff Roster, Users, Connected Chats, User Bans)
-plus a search panel for active bans. Every pane returns to the same overview
-through a `« Back` button.
+opens drill-down panes (Staff Roster, Connected Chats, User Bans for everyone,
+plus Users for the Owner/Founder only) plus a search panel for active bans.
+Every pane returns to the same overview through a `« Back` button.
 
 Aliases:
 
@@ -40,7 +40,7 @@ Aliases:
 
 ## Top-level overview
 
-`Stats.main()` returns the overview card:
+`Stats.main(*, viewer_id=None)` returns the overview card:
 
 ```text
 <community> Stats
@@ -55,9 +55,17 @@ Connected chats: <n>
 Inline keyboard:
 
 ```text
-[ Staff Roster ] [ Users ]
-[ Connected Chats ] [ User Bans ]
+[ Staff Roster ] [ User Bans ]
+[ Connected Chats ]
+[ Users ]                     <- Owner/Founder only (row 3)
 ```
+
+The `Users` button is rendered only when `viewer_id` belongs to the Owner or
+holds the Founder role (`is_owner` plus `get_effective_role`, both cached, in
+the same parallel batch; a failed lookup hides the button). The
+`stats_users` / `stats_user_item` callbacks enforce the same gate with a
+`Founder only.` alert, so a stale or crafted tap without the button still
+cannot open the list. Lookup outages fail closed with a retry alert.
 
 Independent counters and the Founder mention are fetched concurrently with
 `asyncio.gather`; the Telegram response still depends on database and network
@@ -88,7 +96,8 @@ Testers (n)
 
 ### Users (`stats_users:<page>` and `stats_user_item:<page>:<idx>[:stable]`)
 
-`Stats.users_list(page)` paginates `users_cache.all_users_page()` (server-side skip/limit, sorted by `first_name`). Each row shows the cached display name, ID, and `@username` when present. Numbered buttons open `Stats.user_detail(bot, page, idx, stable)`, which renders instantly from cache and refreshes stale/sparse documents in the background via `extraction.launch_identity_refresh` (zero added latency):
+Owner/Founder only, at both layers: the menu button renders only for them
+and both callbacks alert-deny everyone else. `Stats.users_list(page)` paginates `users_cache.all_users_page()` (server-side skip/limit, sorted by `first_name`). Each row shows the cached display name, ID, and `@username` when present. Numbered buttons open `Stats.user_detail(bot, page, idx, stable)`, which renders instantly from cache and refreshes stale/sparse documents in the background via `extraction.launch_identity_refresh` (zero added latency):
 
 ```text
 User Details
@@ -145,7 +154,7 @@ The free-text input handler is scoped to private chats and only fires while the 
 class Stats:
     PAGE_SIZE = 6
 
-    @classmethod async def main() -> tuple[str, InlineKeyboardMarkup]
+    @classmethod async def main(*, viewer_id=None) -> tuple[str, InlineKeyboardMarkup]
     @classmethod async def staff_roster() -> tuple[str, InlineKeyboardMarkup]
     @classmethod async def users_list(page) -> tuple[str, InlineKeyboardMarkup]
     @classmethod async def user_detail(bot, page, idx, stable=None) -> tuple[str, InlineKeyboardMarkup]
@@ -198,6 +207,7 @@ the search and message deletion concurrently.
 ## Behavior reference
 
 - `/tcstats` and `/tcs` both reach `cmd_stats` regardless of prefix (`/`, `!`, `.`).
+- The `Users` button and both Users callbacks are Owner/Founder only; all other panes stay public.
 - `Staff Roster` page shows the Founder mention exactly once, then each role section, even when a role list is empty.
 - `Users` pagination clamps to the last page when the requested page exceeds `total_pages`.
 - `Connected Chats` detail card matches the format produced by the previous `stats_chats_flow.build_chat_detail`.

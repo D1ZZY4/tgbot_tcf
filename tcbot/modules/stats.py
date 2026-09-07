@@ -12,8 +12,8 @@ from typing import TYPE_CHECKING
 
 from telegram.ext import CallbackQueryHandler, ContextTypes, MessageHandler, filters
 
+from tcbot import database as db
 from tcbot.modules.helper import decorators, replies
-from tcbot.modules.helper.formatter import bold, code
 from tcbot.modules.helper.parse_editmsg import safe_edit_cb
 from tcbot.modules.helper.workflows.stats_flow import (
     CHAT_KEY,
@@ -22,6 +22,7 @@ from tcbot.modules.helper.workflows.stats_flow import (
     SEARCH_KEY,
     Stats,
 )
+from tcbot.utils.formatter import bold, code
 from tcbot.utils.prefixes import ALL_PREFIXES_CMD_FILTER, build_prefixed_filters
 
 if TYPE_CHECKING:
@@ -61,8 +62,9 @@ __help_sections__: list[tuple[str, str]] = [
         "Drill-downs",
         f"{bold('Staff Roster')}: Founder, Admins, Developers, Testers, all listed "
         "with mentions.\n"
-        f"{bold('Users')}: paginated list of every cached user. Numbered buttons "
-        "open a per-user detail card.\n"
+        f"{bold('Users')}: paginated list of every cached user (Owner/Founder "
+        "only - the button and the list are hidden from everyone else). "
+        "Numbered buttons open a per-user detail card.\n"
         f"{bold('Connected Chats')}: paginated list of every active group; "
         "drill-in shows owner, ID, and connect date.\n"
         f"{bold('User Bans')}: paginated list of every active ban with a "
@@ -82,6 +84,49 @@ __help__: replies.HelpEntry = {
 }
 
 
+# ──────────────────── Viewer-access helpers ───────────────────── #
+
+
+_ERR_ACCESS_RETRY = (
+    "I couldn't verify your access right now. Please try again in a moment."
+)
+
+
+async def _require_founder_list(q: CallbackQuery, user_id: int | None) -> bool:
+    """Return True when the tapper may open the Users list; alert-denies otherwise.
+
+    Owner-or-Founder only: the list carries every cached user ID. Both checks
+    are cached reads served in parallel, so the spinner clears in one round
+    trip. Lookup outages fail closed with a retry alert; cancellation
+    propagates via the bare gather below.
+    """
+    if user_id is None:
+        try:
+            await q.answer(replies.PERM_FOUNDER_ONLY, show_alert=True)
+        except Exception as exc:
+            log.debug("stats users deny-answer failed: %s", exc)
+        return False
+    try:
+        owner_r, role_r = await asyncio.gather(
+            db.users_roles.is_owner(user_id),
+            db.users_roles.get_effective_role(user_id),
+        )
+    except Exception as exc:
+        log.warning("stats users access check failed for %d: %s", user_id, exc)
+        try:
+            await q.answer(_ERR_ACCESS_RETRY, show_alert=True)
+        except Exception as answer_exc:
+            log.debug("stats users retry-answer failed: %s", answer_exc)
+        return False
+    if owner_r is not True and role_r != "founder":
+        try:
+            await q.answer(replies.PERM_FOUNDER_ONLY, show_alert=True)
+        except Exception as exc:
+            log.debug("stats users deny-answer failed: %s", exc)
+        return False
+    return True
+
+
 # ──────────────────────── Command Handlers ──────────────────────── #
 
 
@@ -92,7 +137,8 @@ async def cmd_stats(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     msg = update.effective_message
     if msg is None:
         return
-    text, kb = await Stats.main()
+    user = update.effective_user
+    text, kb = await Stats.main(viewer_id=user.id if user is not None else None)
     try:
         await msg.reply_text(text, parse_mode="HTML", reply_markup=kb)
     except Exception as exc:
@@ -153,7 +199,11 @@ async def on_stats_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     if q is None:
         return
     # * q.answer() and Stats.main() are independent; run in parallel.
-    await _ack_and_render(q, Stats.main())
+    tapper = update.effective_user
+    await _ack_and_render(
+        q,
+        Stats.main(viewer_id=tapper.id if tapper is not None else None),
+    )
 
 
 @decorators.ratelimiter(limit=_RL_CB_LIMIT, period=_RL_PERIOD_S)
@@ -181,6 +231,9 @@ async def on_stats_users(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None
     except IndexError:
         await q.answer()
         return
+    tapper = update.effective_user
+    if not await _require_founder_list(q, tapper.id if tapper is not None else None):
+        return
     await _ack_and_render(q, Stats.users_list(page))
 
 
@@ -196,6 +249,9 @@ async def on_stats_user_item(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> 
         await q.answer()
         return
     page, idx, stable = parsed
+    tapper = update.effective_user
+    if not await _require_founder_list(q, tapper.id if tapper is not None else None):
+        return
     await _ack_and_render(q, Stats.user_detail(ctx.bot, page, idx, stable))
 
 
