@@ -52,8 +52,7 @@ async def execute_warn(
     target_id: int,
     target_name: str,
     reason_text: str,
-    proof_desc: str | None = None,
-    proof_msgs: list | None = None,
+    proof_msgs: list[Message] | None = None,
 ) -> None:
     """Issue a warning and auto-ban the target if a warn threshold is reached.
 
@@ -716,7 +715,6 @@ async def _exec_warn(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     target_id = ctx.user_data.pop("warn_target_id", 0)
     target_name = ctx.user_data.pop("warn_target_name", "")
     reason_text = ctx.user_data.pop("warn_reason", "")
-    proof_desc = ctx.user_data.pop("warn_proof_desc", None)
     proof_msgs = ctx.user_data.pop("warn_proof_msgs", None)
     ctx.user_data.pop("warn_extra_info", None)
     await execute_warn(
@@ -725,7 +723,6 @@ async def _exec_warn(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         target_id,
         target_name,
         reason_text,
-        proof_desc=proof_desc,
         proof_msgs=proof_msgs,
     )
 

@@ -36,11 +36,15 @@ log = logging.getLogger(__name__)
 WAITING_REASON = 0
 WAITING_PROOF = 1
 
-# * Maximum characters accepted for a typed moderation reason.
+# * Maximum characters accepted for a moderation reason.
 # * Telegram hard-caps messages at 4096 chars; action summaries include names,
 # * IDs, and other metadata on top of the reason.  1000 chars is generous for
 # * any real reason while guaranteeing the combined message stays under the cap.
-_MAX_REASON_LEN: int = 1000
+# * Public name so command entries can fail fast on overlong inline reasons
+# * without paying for target resolution or DB work first.
+MAX_REASON_LEN: int = 1000
+
+_MAX_REASON_LEN: int = MAX_REASON_LEN
 
 
 # ───────────────────────── Reason parsing ───────────────────────── #
@@ -54,6 +58,19 @@ def parse_inline_reason(
     """Extract any inline reason text from command arguments."""
     tokens = args[1:] if has_explicit_target else args
     return " ".join(tokens).strip()
+
+
+def is_reason_too_long(text: str) -> bool:
+    """Return True when ``text`` exceeds the shared reason length cap."""
+    return len(text) > MAX_REASON_LEN
+
+
+def reason_too_long_text(actual_len: int) -> str:
+    """Single source of truth for the overlong-reason reply text."""
+    return (
+        f"Reason is too long (max {MAX_REASON_LEN} characters, "
+        f"you sent {actual_len}). Please shorten it."
+    )
 
 
 # ─────────────────────────── BuildReason ────────────────────────── #
@@ -123,7 +140,6 @@ class _ModActionFlow:
         self.proof = proof
         self.executor = executor
         self._reason_key = f"{action}_reason"
-        self._proof_key = f"{action}_proof_desc"
         self._proof_msgs_key = f"{action}_proof_msgs"
         self._extra_info_key = f"{action}_extra_info"
         self._prompt_chat_key = f"{action}_prompt_chat"
@@ -166,12 +182,9 @@ class _ModActionFlow:
             return WAITING_REASON
 
         text = msg.text.strip()
-        if len(text) > _MAX_REASON_LEN:
+        if is_reason_too_long(text):
             try:
-                await msg.reply_text(
-                    f"Reason is too long (max {_MAX_REASON_LEN} characters, "
-                    f"you sent {len(text)}). Please shorten it."
-                )
+                await msg.reply_text(reason_too_long_text(len(text)))
             except Exception as exc:
                 log.debug("%s reason-too-long reply failed: %s", self.action, exc)
             return WAITING_REASON
@@ -265,9 +278,11 @@ class _ModActionFlow:
         # * Set the executing flag before the first await to close the race window.
         ctx.user_data[self._exec_key] = True
 
-        p = self.proof.record(msg)
-        if p:
-            ctx.user_data[self._proof_key] = p
+        # * Fast path: only photo/video reach here via the filter. Store the
+        # * Message for the proof-channel upload. The short text description
+        # * from BuildProof.record() has no reader, so it stays out of
+        # * user_data to keep conversation state lean.
+        if msg.photo or msg.video:
             existing: list = ctx.user_data.get(self._proof_msgs_key, [])
             ctx.user_data[self._proof_msgs_key] = [*existing, msg]
         try:

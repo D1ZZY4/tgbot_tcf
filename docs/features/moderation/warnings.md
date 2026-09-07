@@ -101,7 +101,9 @@ Inline reason parsing mirrors other moderation actions:
 
 If no inline reason is present, the bot prompts for a reason. Warning reasons are required, so the reason keyboard does not include `Skip` for `/tcwarn`.
 
-When the command replies to a user message, the reply wins in `extract_target`, so every argument is reason text: a leading numeric or `@username` token is never consumed as a target. The shared `extraction.has_reply_target()` helper owns this check.
+When the command replies to a user message, the reply wins in `extract_target`, so every argument is reason text: a leading numeric or `@username` token is never consumed as a target. The shared `extraction.has_explicit_target(msg, args)` helper owns this check.
+
+Inline reasons share the same 1000-character cap as typed reasons (`reason_flow.MAX_REASON_LEN`). Overlong inline input fails fast with the shared retry notice before any role lookup; typed input exceeding the cap stays in `WAITING_REASON` with the same text.
 
 ## Proof behavior
 

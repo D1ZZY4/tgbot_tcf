@@ -29,7 +29,9 @@ from tcbot.modules.helper.workflows.muting_flow import (
 from tcbot.modules.helper.workflows.reason_flow import (
     WAITING_PROOF,
     WAITING_REASON,
+    is_reason_too_long,
     parse_inline_reason,
+    reason_too_long_text,
 )
 from tcbot.utils.prefixes import build_prefixed_filters, parse_cmd_args
 
@@ -118,13 +120,8 @@ async def cmd_mute(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
 
     raw_args = parse_cmd_args(msg.text)
-    # * Reply wins in extract_target, so every arg is duration/reason text
-    # * when the command replies to a user (see kicking.py for the rationale).
-    has_explicit_target = (
-        not extraction.has_reply_target(msg)
-        and bool(raw_args)
-        and (raw_args[0].lstrip("-").isdigit() or raw_args[0].startswith("@"))
-    )
+    # * Single owner for the reply-wins plus shape check (see banning.py).
+    has_explicit_target = extraction.has_explicit_target(msg, raw_args)
     target_id, target_fname = await extraction.extract_target(update, raw_args, ctx.bot)
 
     remaining_args = list(raw_args[1:] if has_explicit_target else raw_args)
@@ -196,6 +193,14 @@ async def cmd_mute(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
             remaining_args.pop(0)
 
     inline_reason = parse_inline_reason(remaining_args, has_explicit_target=False)
+    # * Fail fast on overlong inline reasons with the shared cap and text,
+    # * before any prompt is sent or state is stored.
+    if inline_reason and is_reason_too_long(inline_reason):
+        try:
+            await msg.reply_text(reason_too_long_text(len(inline_reason)))
+        except Exception as exc:
+            log.debug("cmd_mute reason-too-long reply failed: %s", exc)
+        return ConversationHandler.END
     target_mention = mention(target_id, target_fname or str(target_id))
     dur_str = fmt_duration(duration)
     extra_info = f"{code(str(target_id))}: {dur_str}"
@@ -209,7 +214,6 @@ async def cmd_mute(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
             "mute_admin_fname": admin.first_name,
             "mute_prompt_chat": msg.chat.id,
             "mute_reason": "",
-            "mute_proof_desc": None,
             "mute_extra_info": extra_info,
         }
     )
@@ -222,7 +226,6 @@ async def cmd_mute(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         "mute_admin_fname",
         "mute_prompt_chat",
         "mute_reason",
-        "mute_proof_desc",
         "mute_extra_info",
     )
 

@@ -78,7 +78,8 @@ Target resolution for moderation commands.
 | Export | Purpose |
 |---|---|
 | `extract_target(update, args, bot=None)` | Resolves targets; returns `tuple[int, str]` (user_id, fname) on success or `tuple[None, None]` on failure. Priority: reply to sender_chat-aware (channel senders are refused: they are not actionable user IDs, so resolution falls through to args/entities) → args (ID/username) → args (partial name search in DB) → text mentions → @mentions. Numeric IDs take a cache fast path (IDs are immutable, so a real cached name skips the live `get_chat` round trip); bare-numeric and legacy `User <id>` fallbacks fall through to the live lookup. |
-| `has_reply_target(msg)` | Reply-target predicate mirroring `extract_target` priority 1 (including the anonymous-admin skip). Command entries use it to decide whether the first arg token names the target or starts the reason text. |
+| `has_reply_target(msg)` | Reply-target predicate mirroring `extract_target` priority 1 (including the anonymous-admin skip). Shared by `has_explicit_target` to decide whether the first arg token names the target or starts the reason text. |
+| `has_explicit_target(msg, args)` | Single owner of the reply-wins plus shape check used by the ban, kick, mute, and warn entries: with a reply target every arg is reason text, otherwise a leading numeric ID or `@username` token is the explicit target. Sync with no I/O, so entries pay no extra round trip here. |
 | `sync_user_identity(bot, target_id)` | Full sync protocol for detail views: cached read, live verify, update on mismatch. The older gap-fill-only `resolve_user_identity` was removed once every consumer used `sync`; its logic lives on inside `sync_user_identity` and `_fetch_live_identity`. |
 
 **Resolution priority for `extract_target()`:**
@@ -98,7 +99,7 @@ Main groups:
 
 | Factory group | Examples |
 |---|---|
-| Ban/checking | `ban_log_new`, `ban_log_update`, `checkme_ban_kb`, `checkme_detail_back_kb` |
+| Ban/checking | `ban_log_new`, `ban_log_update`, `appeal_button_kb`, `checkme_ban_kb`, `checkme_detail_back_kb` |
 | Proof | `action_proof_kb(target_id, proof_link)` - single "Proof {target_id}" URL button; returns `None` when `proof_link` is falsy. Used by mute/kick/warn executors after uploading proof. |
 | Admin roles | `promote_role_kb`, `demote_confirm_kb`, `promo_decision_kb` |
 | Menus/help | `main_menu_kb`, `group_start_kb`, `help_topics_menu_kb`, `help_topics_kb`, `back_to_start_kb`, `back_to_help_kb`, `back_to_help_cmd_kb`, `module_help_kb`, `back_to_module_kb`, `additional_menu_kb` |

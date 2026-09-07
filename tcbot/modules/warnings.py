@@ -19,7 +19,9 @@ from tcbot.modules.helper.formatter import bold, code, mention
 from tcbot.modules.helper.workflows.reason_flow import (
     WAITING_PROOF,
     WAITING_REASON,
+    is_reason_too_long,
     parse_inline_reason,
+    reason_too_long_text,
 )
 from tcbot.modules.helper.workflows.warning_flow import (
     execute_resetwarns,
@@ -128,13 +130,8 @@ async def cmd_warn_entry(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
 
     args = parse_cmd_args(msg.text)
-    # * Reply wins in extract_target, so every arg is reason text when the
-    # * command replies to a user (see kicking.py for the rationale).
-    has_explicit_target = (
-        not extraction.has_reply_target(msg)
-        and bool(args)
-        and (args[0].lstrip("-").isdigit() or args[0].startswith("@"))
-    )
+    # * Single owner for the reply-wins plus shape check (see banning.py).
+    has_explicit_target = extraction.has_explicit_target(msg, args)
     target_id, target_name = await extraction.extract_target(update, args, ctx.bot)
 
     inline_reason = parse_inline_reason(args, has_explicit_target=has_explicit_target)
@@ -144,6 +141,15 @@ async def cmd_warn_entry(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
             await msg.reply_text(replies.ERR_CANNOT_RESOLVE)
         except Exception as exc:
             log.debug("cmd_warn_entry no-target reply failed: %s", exc)
+        return ConversationHandler.END
+
+    # * Fail fast on overlong inline reasons with the shared cap and text,
+    # * before any role I/O or notice work.
+    if inline_reason and is_reason_too_long(inline_reason):
+        try:
+            await msg.reply_text(reason_too_long_text(len(inline_reason)))
+        except Exception as exc:
+            log.debug("cmd_warn_entry reason-too-long reply failed: %s", exc)
         return ConversationHandler.END
 
     ident, role_result = await asyncio.gather(
@@ -186,13 +192,12 @@ async def cmd_warn_entry(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         {
             "warn_target_id": target_id,
             "warn_target_name": target_name or str(target_id),
-            "warn_proof_desc": None,
         }
     )
 
     target_mention = mention(target_id, target_name or str(target_id))
 
-    _WARN_KEYS = ("warn_target_id", "warn_target_name", "warn_proof_desc")
+    _WARN_KEYS = ("warn_target_id", "warn_target_name")
 
     if inline_reason:
         ctx.user_data["warn_reason"] = inline_reason

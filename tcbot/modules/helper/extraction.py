@@ -78,6 +78,23 @@ def has_reply_target(msg: Message) -> bool:
     return sender is not None and sender.type != Chat.CHANNEL
 
 
+def has_explicit_target(msg: Message, args: list[str]) -> bool:
+    """Return True when ``args[0]`` names an explicit moderation target.
+
+    Single owner of the reply-wins plus shape check used by the ban, kick,
+    mute, and warn entries: a reply target means every arg is reason text,
+    otherwise a leading numeric ID or ``@username`` token is the target.
+    Sync and allocation-free on the hot path, so entries pay no I/O here;
+    the heavier ``extract_target`` resolution runs right after.
+    """
+    if not args:
+        return False
+    if has_reply_target(msg):
+        return False
+    first = args[0]
+    return first.lstrip("-").isdigit() or first.startswith("@")
+
+
 async def _best_name(uid: int, *primary: str | None) -> str:
     """Pick the first non-empty/non-numeric primary name; fall back to cache, then str(uid).
 

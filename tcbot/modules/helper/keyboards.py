@@ -12,6 +12,7 @@ from telegram import InlineKeyboardButton, InlineKeyboardMarkup
 
 from tcbot import cfg
 from tcbot import database as db
+from tcbot.modules.helper.parse_link import appeal_deep_link
 
 log = logging.getLogger(__name__)
 
@@ -55,15 +56,37 @@ def ban_log_update(
     appeal_url: str,
 ) -> InlineKeyboardMarkup:
     """Return the ban-log keyboard with a previous-proof button and explicit appeal URL."""
+    # * One URL button per row (keyboard-styles "Detail view" convention):
+    # * proof labels embed the target ID, so two of them side by side
+    # * truncate on narrow clients.
+    return InlineKeyboardMarkup(
+        [
+            [InlineKeyboardButton(f"Proof {target_id}", url=proof_link)],
+            [
+                InlineKeyboardButton(
+                    f"Previous Proof {target_id}", url=previous_proof_link
+                )
+            ],
+            [InlineKeyboardButton("Submit Appeal", url=appeal_url)],
+        ]
+    )
+
+
+def appeal_button_kb(
+    bot_username: str,
+    ban_id: str,
+) -> InlineKeyboardMarkup | None:
+    """Single Submit Appeal URL button, or None when the bot username is unknown."""
+    if not bot_username:
+        return None
     return InlineKeyboardMarkup(
         [
             [
-                InlineKeyboardButton(f"Proof {target_id}", url=proof_link),
                 InlineKeyboardButton(
-                    f"Previous Proof {target_id}", url=previous_proof_link
-                ),
-            ],
-            [InlineKeyboardButton("Submit Appeal", url=appeal_url)],
+                    "Submit Appeal",
+                    url=appeal_deep_link(bot_username, ban_id),
+                )
+            ]
         ]
     )
 
@@ -147,7 +170,7 @@ def checkme_ban_kb(
     """Summary view keyboard - Details | Proof (row 1), Appeal (row 2)."""
     if not bot_username:
         return None
-    appeal_url = f"https://t.me/{bot_username}?start=appeal_{ban_id}"
+    appeal_url = appeal_deep_link(bot_username, ban_id)
     row1 = [InlineKeyboardButton("Details", callback_data=f"checkme_detail:{ban_id}")]
     if proof_link:
         row1.append(InlineKeyboardButton("Proof", url=proof_link))

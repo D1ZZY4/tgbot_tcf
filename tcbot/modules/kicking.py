@@ -20,7 +20,9 @@ from tcbot.modules.helper.workflows.kicking_flow import kick_conversation, proof
 from tcbot.modules.helper.workflows.reason_flow import (
     WAITING_PROOF,
     WAITING_REASON,
+    is_reason_too_long,
     parse_inline_reason,
+    reason_too_long_text,
 )
 from tcbot.utils.prefixes import build_prefixed_filters, parse_cmd_args
 
@@ -100,15 +102,10 @@ async def cmd_kick(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
 
     args = parse_cmd_args(msg.text)
-    # * Reply wins in extract_target, so every arg is reason text when the
-    # * command replies to a user. Checking the shape of args[0] alone
-    # * would drop a leading numeric/@ token that belongs to the reason
-    # * (e.g. reply + "/tck 12345 spamming" lost "12345").
-    has_explicit_target = (
-        not extraction.has_reply_target(msg)
-        and bool(args)
-        and (args[0].lstrip("-").isdigit() or args[0].startswith("@"))
-    )
+    # * Single owner for the reply-wins plus shape check (see banning.py).
+    # * With a reply target every arg is reason text, so a leading
+    # * numeric/@ token stays in the reason instead of being consumed.
+    has_explicit_target = extraction.has_explicit_target(msg, args)
     target_id, target_name = await extraction.extract_target(update, args, ctx.bot)
 
     inline_reason = parse_inline_reason(args, has_explicit_target=has_explicit_target)
@@ -118,6 +115,15 @@ async def cmd_kick(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
             await msg.reply_text(replies.ERR_CANNOT_RESOLVE)
         except Exception as exc:
             log.debug("cmd_kick no-target reply failed: %s", exc)
+        return ConversationHandler.END
+
+    # * Fail fast on overlong inline reasons with the shared cap and text,
+    # * before any role I/O or demote work.
+    if inline_reason and is_reason_too_long(inline_reason):
+        try:
+            await msg.reply_text(reason_too_long_text(len(inline_reason)))
+        except Exception as exc:
+            log.debug("cmd_kick reason-too-long reply failed: %s", exc)
         return ConversationHandler.END
 
     # * return_exceptions=True prevents a DB failure from leaving the ConversationHandler open.
@@ -171,13 +177,12 @@ async def cmd_kick(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         {
             "kick_target_id": target_id,
             "kick_target_name": target_name or str(target_id),
-            "kick_proof_desc": None,
         }
     )
 
     target_mention = mention(target_id, target_name or str(target_id))
 
-    _KICK_KEYS = ("kick_target_id", "kick_target_name", "kick_proof_desc")
+    _KICK_KEYS = ("kick_target_id", "kick_target_name")
 
     if inline_reason:
         ctx.user_data["kick_reason"] = inline_reason

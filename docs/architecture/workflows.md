@@ -29,8 +29,8 @@ Conversation and multi-step logic lives in `tcbot/modules/helper/workflows/`. Ne
 | `BuildProof.keyboard()` | Returns `[Skip] [Cancel]` when skipping is allowed, otherwise `[Cancel]`. |
 | `BuildProof.step_prompt(...)` | Prompt after an in-conversation reason. |
 | `BuildProof.noted_prompt(...)` | Prompt when a reason was provided inline. |
-| `BuildProof.record(msg)` | Returns a short proof description for photo/video messages. |
-| `upload_proof(bot, msgs, caption, proof_chat, proof_thread)` | Uploads one proof item or an album and returns the uploaded message ID. |
+| `BuildProof.record(msg)` | Returns a short proof description for photo/video messages. Kept for backward compatibility; the shared reason flow no longer stores its result because no executor reads it. |
+| `upload_proof(bot, msgs, caption, proof_chat, proof_thread)` | Uploads one proof item or an album and returns the uploaded message ID. Returns `None` fast without Telegram I/O on empty input or an album with no photo/video item. |
 
 ## Shared reason factory: `reason_flow.py`
 
@@ -45,12 +45,14 @@ Exports:
 
 | Export | Purpose |
 |---|---|
-| `parse_inline_reason(args, has_explicit_target)` | Returns reason text after the target token when needed. |
+| `parse_inline_reason(args, has_explicit_target)` | Returns reason text after the target token when needed. Ban, kick, mute, and warn entries all use this parser with `extraction.has_explicit_target(msg, args)` so reply-target reasons keep leading ID-like tokens. |
+| `MAX_REASON_LEN` | Maximum character length accepted for a moderation reason (1000). Typed input exceeding this stays in `WAITING_REASON` with a retry notice; overlong inline reasons fail fast at the entry with the same text via `is_reason_too_long()` and `reason_too_long_text()`. `_MAX_REASON_LEN` remains as a backward-compatible alias. |
+| `is_reason_too_long(text)` | Shared length predicate used by the typed-reason handler and all four inline-reason entries. |
+| `reason_too_long_text(actual_len)` | Single source of truth for the overlong-reason reply text. |
 | `BuildReason(...)` | Configures reason-step prompts and buttons. |
 | `build_modaction_conv(reason, proof, entry_fn, executor, entry_filter, escape_filter=None)` | Builds the shared kick/mute/warn conversation. |
-| `_MAX_REASON_LEN` | Maximum character length accepted for a typed reason (1000). Input exceeding this is rejected with a user-visible message and the conversation stays in `WAITING_REASON`. |
 
-The shared factory stores action-specific values in `ctx.user_data`, then calls the supplied executor adapter. When a moderator submits proof media, `_on_proof` stores both the short text description (`{action}_proof_desc`) and the actual `Message` objects (`{action}_proof_msgs`) in `user_data`. Executors pop `{action}_proof_msgs` and upload them to the proof channel via `upload_proof()`; the resulting URL is shown as an inline keyboard button via `keyboards.action_proof_kb()`.
+The shared factory stores action-specific values in `ctx.user_data`, then calls the supplied executor adapter. When a moderator submits proof media, `_on_proof` stores the actual `Message` objects (`{action}_proof_msgs`) in `user_data`. Executors pop `{action}_proof_msgs` and upload them to the proof channel via `upload_proof()`; the resulting URL is shown as an inline keyboard button via `keyboards.action_proof_kb()`. The short text description from `BuildProof.record()` has no reader and is intentionally kept out of `user_data` to keep conversation state lean.
 
 `_on_proof` and `_on_skip_proof` include two in-flight guards stored in `ctx.user_data`:
 

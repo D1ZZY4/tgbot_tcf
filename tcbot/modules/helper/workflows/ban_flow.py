@@ -11,7 +11,7 @@ import logging
 from typing import TYPE_CHECKING, Any
 
 import telegram.error
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup, Update
+from telegram import Update
 from telegram.ext import (
     CallbackQueryHandler,
     ContextTypes,
@@ -393,20 +393,7 @@ async def _execute_ban(bot: Bot, msgs: list[Message], meta: dict[str, Any]) -> N
         f"Reason: {esc(reason)}\n\n"
         "You may submit an appeal using the button below."
     )
-    _pm_kb = (
-        InlineKeyboardMarkup(
-            [
-                [
-                    InlineKeyboardButton(
-                        "Submit Appeal",
-                        url=appeal_deep_link(bot_username, ban_id),
-                    )
-                ]
-            ]
-        )
-        if bot_username
-        else None
-    )
+    _pm_kb = keyboards.appeal_button_kb(bot_username, ban_id)
 
     # * Edit prompt summary + cache user + notify banned user in one round-trip.
     summary = (

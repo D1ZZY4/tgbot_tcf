@@ -21,6 +21,11 @@ from tcbot.modules.helper.workflows.ban_flow import (
     proof,
 )
 from tcbot.modules.helper.workflows.demote_flow import Demote
+from tcbot.modules.helper.workflows.reason_flow import (
+    is_reason_too_long,
+    parse_inline_reason,
+    reason_too_long_text,
+)
 from tcbot.utils.prefixes import build_prefixed_filters, parse_cmd_args
 
 if TYPE_CHECKING:
@@ -100,17 +105,13 @@ async def cmd_ban_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
         return ConversationHandler.END
     raw_args = parse_cmd_args(msg.text)
 
-    # * Reply wins in extract_target, so every arg is reason text when the
-    # * command replies to a user (shared helper mirrors priority 1,
-    # * including the anonymous-admin sender_chat skip).
-    has_explicit_target = (
-        not extraction.has_reply_target(msg)
-        and bool(raw_args)
-        and (raw_args[0].lstrip("-").isdigit() or raw_args[0].startswith("@"))
-    )
+    # * Single owner for the reply-wins plus shape check: with a reply
+    # * target every arg is reason text, otherwise a leading numeric ID or
+    # * @username token is the explicit target. Sync, so no I/O cost here.
+    has_explicit_target = extraction.has_explicit_target(msg, raw_args)
     target_id, target_fname = await extraction.extract_target(update, raw_args, ctx.bot)
 
-    ban_reason = " ".join(raw_args[1:] if has_explicit_target else raw_args).strip()
+    ban_reason = parse_inline_reason(raw_args, has_explicit_target=has_explicit_target)
 
     if not target_id:
         try:
@@ -124,6 +125,15 @@ async def cmd_ban_start(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> int:
             await msg.reply_text(_ERR_REASON_REQUIRED)
         except Exception as exc:
             log.debug("cmd_ban_start no-reason reply failed: %s", exc)
+        return ConversationHandler.END
+
+    # * Fail fast on overlong inline reasons with the same cap and text as
+    # * the typed-reason path, before any role I/O or demote work.
+    if is_reason_too_long(ban_reason):
+        try:
+            await msg.reply_text(reason_too_long_text(len(ban_reason)))
+        except Exception as exc:
+            log.debug("cmd_ban_start reason-too-long reply failed: %s", exc)
         return ConversationHandler.END
 
     # * Identity check + role lookup happen in parallel; both depend only on

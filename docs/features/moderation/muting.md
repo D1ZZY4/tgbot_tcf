@@ -130,7 +130,9 @@ The target can be specified by:
 
 The reason prompt and proof prompt are stamped with `extra_info` (`<code id>: <duration>`) so the moderator sees the duration even when no reason was typed inline.
 
-When the command replies to a user message, the reply wins in `extract_target`, so every argument is duration/reason text: a leading numeric or `@username` token is never consumed as a target. The shared `extraction.has_reply_target()` helper owns this check.
+When the command replies to a user message, the reply wins in `extract_target`, so every argument is duration/reason text: a leading numeric or `@username` token is never consumed as a target. The shared `extraction.has_explicit_target(msg, args)` helper owns this check.
+
+Inline reasons share the same 1000-character cap as typed reasons (`reason_flow.MAX_REASON_LEN`). Overlong inline input fails fast with the shared retry notice before any prompt is sent; typed input exceeding the cap stays in `WAITING_REASON` with the same text.
 
 ## Reason and proof behavior
 

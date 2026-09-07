@@ -108,6 +108,11 @@ async def upload_proof(
     proof_thread: int | None,
 ) -> int | None:
     """Upload proof media to the proof channel. Returns proof_message_id or None on failure."""
+    # * Fast fail without Telegram I/O: empty input or an album with no
+    # * photo/video item cannot produce an upload. Callers already guard on
+    # * truthy proof_msgs, so this only bites on programming errors.
+    if not msgs:
+        return None
     try:
         if len(msgs) > 1:
             media: list[InputMediaPhoto | InputMediaVideo] = []
@@ -127,6 +132,8 @@ async def upload_proof(
                         InputMediaVideo(m.video.file_id, caption=cap, parse_mode="HTML")
                     )
                     first_caption_set = True
+            if not media:
+                return None
             sent = await bot.send_media_group(
                 proof_chat, media, message_thread_id=proof_thread
             )
@@ -135,20 +142,21 @@ async def upload_proof(
                 "Proof album uploaded: %d items, message_id=%s", len(sent), proof_msg_id
             )
             return proof_msg_id
-        if msgs[0].photo:
+        first = msgs[0]
+        if first.photo:
             sent = await bot.send_photo(
                 proof_chat,
-                msgs[0].photo[-1].file_id,
+                first.photo[-1].file_id,
                 caption=caption,
                 parse_mode="HTML",
                 message_thread_id=proof_thread,
             )
             log.info("Proof photo uploaded: message_id=%s", sent.message_id)
             return sent.message_id
-        if msgs[0].video:
+        if first.video:
             sent = await bot.send_video(
                 proof_chat,
-                msgs[0].video.file_id,
+                first.video.file_id,
                 caption=caption,
                 parse_mode="HTML",
                 message_thread_id=proof_thread,
