@@ -20,6 +20,7 @@ if TYPE_CHECKING:
 
 from tcbot import cfg
 from tcbot import database as db
+from tcbot.modules.helper import replies
 from tcbot.modules.helper.identity import ANONYMOUS_BOT_ID
 from tcbot.utils.time_and_date import elapsed_ms, monotonic
 
@@ -169,6 +170,24 @@ _cmd_limiter = _AsyncRateLimiter(max_calls=8, window=30.0, prefix="cmd")
 _cbq_limiter = _AsyncRateLimiter(max_calls=20, window=10.0, prefix="cbq")
 
 
+async def _is_exempt(uid: int) -> bool:
+    """Return True when ``uid`` is the current Founder (exempt from rate limits).
+
+    Served from the cached owner ID (300 s TTL, invalidated on transfer),
+    so hot paths pay zero MongoDB round trips on cache hits. Fail-closed:
+    any lookup failure (including no owner row yet) means not exempt, so
+    an outage never silently disables throttling. Cancellation propagates.
+    """
+    try:
+        owner_id = await db.users_roles.get_owner_id()
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        log.debug("Rate-limit exemption lookup failed for %d: %s", uid, exc)
+        return False
+    return owner_id is not None and owner_id == uid
+
+
 async def global_rate_limit_handler(
     update: Update, ctx: ContextTypes.DEFAULT_TYPE
 ) -> None:
@@ -179,11 +198,13 @@ async def global_rate_limit_handler(
 
     # * ── button press ─────────────────────────────────────────────────────────
     if update.callback_query:
+        if await _is_exempt(uid):
+            return
         wait = await _cbq_limiter.check(uid)
         if wait:
             try:
                 await update.callback_query.answer(
-                    f"Slow down - try again in {wait:.0f} seconds.",
+                    replies.rate_limit_text(wait),
                     show_alert=True,
                 )
             except Exception as exc:
@@ -200,11 +221,13 @@ async def global_rate_limit_handler(
     if not any(text.startswith(p) for p in cfg.prefixes if p):
         return  # * plain chat message - never rate-limit
 
+    if await _is_exempt(uid):
+        return
     wait = await _cmd_limiter.check(uid)
     if wait:
         if msg:
             try:
-                await msg.reply_text(f"Slow down - try again in {wait:.0f} seconds.")
+                await msg.reply_text(replies.rate_limit_text(wait))
             except Exception as exc:
                 log.debug("Command rate-limit reply failed: %s", exc)
         raise ApplicationHandlerStop
@@ -239,12 +262,18 @@ def ratelimiter(
             """Block the call and notify the user if the rate limit is exceeded."""
             uid = update.effective_user.id if update.effective_user else None
             if uid:
+                # * The Founder bypasses per-handler quotas (incident response
+                # * must never stall on a throttle); everyone else shares the
+                # * same bucket. Fail-closed via _is_exempt, cancellation
+                # * propagates.
+                if await _is_exempt(uid):
+                    return await func(update, ctx)
                 wait = await _limiter.check(uid)
                 if wait:
                     if update.callback_query:
                         try:
                             await update.callback_query.answer(
-                                f"Slow down - try again in {wait:.0f}s.",
+                                replies.rate_limit_text(wait),
                                 show_alert=True,
                             )
                         except Exception as exc:
@@ -253,7 +282,7 @@ def ratelimiter(
                     if update.effective_message:
                         try:
                             await update.effective_message.reply_text(
-                                f"Slow down - try again in {wait:.0f} seconds."
+                                replies.rate_limit_text(wait)
                             )
                         except Exception as exc:
                             log.debug("Message rate-limit reply failed: %s", exc)

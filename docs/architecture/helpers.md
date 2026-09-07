@@ -27,13 +27,13 @@ Decorators provide authorization, handler-level rate limiting, and debug tracing
 
 | Decorator/helper | Purpose |
 |---|---|
-| `ratelimiter(limit=5, period=60.0)` | Per-handler sliding-window user throttle backed by Redis sorted set when available; falls back to in-process sliding window. Use as the outermost command decorator. |
+| `ratelimiter(limit=5, period=60.0)` | Per-handler sliding-window user throttle backed by Redis sorted set when available; falls back to in-process sliding window. Use as the outermost command decorator. The current Founder (cached owner ID, 300 s TTL) bypasses per-handler quotas so incident response never stalls; everyone else shares the same bucket. |
 | `log_execution` | DEBUG-level entry/exit/exception tracing. Use as the innermost decorator. |
 | `owner_only` | Founder-only commands. |
 | `staff_only` | Founder/Admin commands. |
 | `mod_only` | Developer+ commands, such as ban and unban. |
 | `basic_mod_only` | Tester+ commands, such as kick, mute, and warn. |
-| `global_rate_limit_handler` | Universal rate limiter registered by `__main__.py` at group `-1`. Uses `_AsyncRateLimiter` (Redis sorted-set + in-process fallback) for both command and callback-query buckets. |
+| `global_rate_limit_handler` | Universal rate limiter registered by `__main__.py` at group `-1`. Uses `_AsyncRateLimiter` (Redis sorted-set + in-process fallback) for both command and callback-query buckets. The Founder bypasses both buckets; plain chat messages are never limited. |
 
 ### Rate limiter backend
 
@@ -41,6 +41,8 @@ Decorators provide authorization, handler-level rate limiting, and debug tracing
 
 - **Redis available**: atomic Lua script on a sorted-set key `rl:{prefix}:{uid}`. Expired entries are purged each check via `ZREMRANGEBYSCORE`. State survives bot restarts, so the quota is consistent across the scheduled 4-hour `run-bot.yml` cycle.
 - **Redis absent or error**: transparent fallback to `_RateLimiter` (in-process `deque`-based sliding window). Rate limiting is never silently disabled; the fallback is logged at DEBUG level.
+- **Founder exemption**: `_is_exempt(uid)` compares against the cached owner ID before any bucket check, in both the global handler and every per-handler wrapper. A failed lookup means not exempt (fail-closed, throttling stays on); cancellation propagates. Per-handler quotas are graduated by cost: reads 8-10 calls / 30 s, moderation writes 3-5 calls / 60 s, bulk actions 1-3 calls / 300 s, callbacks 15-20 presses / 30 s.
+- **One retry voice**: every rejection (global command, global callback, per-handler message, per-handler callback) replies with `replies.rate_limit_text(wait)`, so throttled users see identical wording regardless of which bucket stopped them.
 
 Typical command decorator order:
 
@@ -156,6 +158,12 @@ Each help-bearing module declares exactly one `__help__: replies.HelpEntry = {..
 | `who_section(perm)` | `tuple[str, str]` | Builds a `(SEC_WHO, perm)` section entry. |
 | `where_section(ctx)` | `tuple[str, str]` | Builds a `(SEC_WHERE, ctx)` section entry. |
 | `target_section()` | `tuple[str, str]` | Builds a `(SEC_TARGET, TARGET_SYNTAX)` section entry. |
+
+### Reply-text helpers
+
+| Helper | Purpose |
+|---|---|
+| `rate_limit_text(wait_s)` | Single owner for the throttled retry notice (`Slow down - try again in N seconds.`). Used by the global limiter and every per-handler `ratelimiter` rejection. |
 
 All command modules that expose user-facing commands use these helpers rather than raw inline tuple literals.
 

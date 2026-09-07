@@ -40,9 +40,11 @@ def _privacy_msg(botname: str) -> str:
         f"- {bold('Ban records')}: if you receive a federation ban, the reason, proof, and issuing admin are stored.\n"
         f"- {bold('Warn and mute records')}: logged per group for moderation tracking.\n"
         f"- {bold('Kick logs')}: kept for staff reference.\n"
-        f"- {bold('Appeal submissions')}: your messages and any attachments you send through the appeal system.\n\n"
-        f"All stored data is accessible only to {_CNAME} staff. "
-        "Nothing is shared with third parties.\n\n"
+        f"- {bold('Appeal submissions')}: your messages and any attachments you send through the appeal system.\n"
+        f"- {bold('Promotion requests')}: your request and its review outcome when you apply for a staff role.\n\n"
+        f"Ban, warn, mute, and kick records can be looked up by anyone with "
+        f"{bold('/check')} or {bold('/checkme')}; changing anything still requires "
+        f"the proper staff rank.\n\n"
         f"Tap {bold('Privacy Policy')} below for the full policy, broken down by section."
     )
 
@@ -68,7 +70,8 @@ _PRIVACY_POLICY_SECTIONS: list[tuple[str, str]] = [
         f"- {bold('Ban records')}: reason, proof link, issuing admin, and timestamps.\n"
         f"- {bold('Appeal submissions')}: your appeal message and any supporting files you send.\n"
         f"- {bold('Warn and mute records')}: logged per group for moderation purposes.\n"
-        f"- {bold('Kick logs')}: recorded for staff reference and audit.",
+        f"- {bold('Kick logs')}: recorded for staff reference and audit.\n"
+        f"- {bold('Promotion requests')}: your application and its review outcome when you request a staff role.",
     ),
     (
         "Why We Collect It",
@@ -80,21 +83,27 @@ _PRIVACY_POLICY_SECTIONS: list[tuple[str, str]] = [
     ),
     (
         "Who Can Access It",
-        f"Only {_CNAME} staff (Admins and the Founder) have access to stored data. "
-        "Access is restricted by role and is not granted to regular members.\n\n"
+        f"Moderation records (bans, warns, mutes, kicks) can be looked up by anyone "
+        f"through {bold('/check')} and {bold('/checkme')}, so enforcement stays transparent. "
+        f"Taking action on that data (banning, muting, promoting, connecting groups) "
+        f"requires the proper {_CNAME} staff rank, checked on every command.\n\n"
         "No data is sold, rented, or shared with third parties under any circumstances.",
     ),
     (
         "How Long We Keep It",
         "Ban records are kept indefinitely as part of the federation log, to support "
         "cross-group enforcement and appeal review.\n\n"
-        "Cached identity data (name, username) is updated on each interaction and may be "
-        "pruned if a user has had no activity for an extended period.\n\n"
-        "Appeal records are retained after resolution for reference and audit.",
+        "Cached identity data (name, username) refreshes on each interaction and is "
+        "pruned automatically after 90 days without activity.\n\n"
+        "Expired timed mutes are deleted automatically; permanent mutes stay until lifted. "
+        "Warnings may expire automatically when the operator enables warn expiry, otherwise "
+        "they stay until cleared.\n\n"
+        "Appeal and promotion-request records are retained after resolution for reference and audit.",
     ),
     (
         "Your Rights",
-        f"You can request a review or deletion of your personal data by reaching out to a "
+        f"You can review your own ban status at any time with {bold('/checkme')}, and you can "
+        f"request a review or deletion of your personal data by reaching out to a "
         f"{_CNAME} Admin or the Founder directly.\n\n"
         "Requests are handled on a best-effort basis. Active ban records may be retained "
         "even after a deletion request if they are required for ongoing enforcement or "

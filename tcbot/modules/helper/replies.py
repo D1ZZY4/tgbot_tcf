@@ -46,6 +46,19 @@ CONTEXT_EXEC_OR_GROUP = "Exec group, any connected group, or bot PM."
 CONTEXT_ANYONE = "Anyone, no special permissions needed."
 WHERE_CONNECTED_GROUP = "Inside any connected group."
 
+# ─────────────────────── Rate-limit replies ─────────────────────── #
+
+
+def rate_limit_text(wait_s: float) -> str:
+    """Single owner for the user-facing rate-limit retry notice.
+
+    Used by the global command/callback limiter and every per-handler
+    ``ratelimiter`` rejection so throttled users always see the same
+    wording regardless of which bucket stopped them.
+    """
+    return f"Slow down - try again in {wait_s:.0f} seconds."
+
+
 # ─────────────────────── Permission Tiers ───────────────────────── #
 
 PERM_FOUNDER_ONLY = "Founder only."
