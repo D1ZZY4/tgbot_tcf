@@ -306,6 +306,30 @@ def refuse_message(action: str, ident: Identity) -> str | None:
     return template.format(line=_line(ident))
 
 
+# ─────────── Recognition notes (read-only views) ──────────────── #
+# * Single owner for "who is this?" copy on read-only surfaces such as
+# * /check: moderation entries use refuse_message/staff_notice instead, so
+# * no caller builds these lines inline. Staff and Founder are absent on
+# * purpose: the profile Role line already labels them.
+
+_PROFILE_NOTE: dict[IdentityKind, str] = {
+    "this_bot": "That's me - this bot. I run moderation here, not collect bans.",
+    "self": "That's you - checking your own record, good habit.",
+    "telegram": "That's Telegram itself - outside federation jurisdiction.",
+    "anon_admin": "That's the anonymous-admin placeholder, not an individual user.",
+}
+
+
+def profile_note(ident: Identity) -> str | None:
+    """Return a recognition note for special identities, or ``None``.
+
+    ``None`` means the identity needs no note (regular users, staff, and
+    Founder: staff and Founder are already labeled by the profile Role
+    line, so a note would only restate it).
+    """
+    return _PROFILE_NOTE.get(ident.kind)
+
+
 # ─────────────── Staff heads-up (action proceeds) ───────────────── #
 # * For warn / unwarn / unmute / resetwarns on staff targets, the action
 # * proceeds but we surface a short heads-up so the executor knows the

@@ -279,7 +279,7 @@ The target is resolved by reply, user ID, or resolvable username.
 
 Special cases for the active-ban summary line:
 
-- The bot itself is always reported clean.
+- The bot itself is always reported clean, with a `That's me - ...` recognition note on top of the profile.
 - Founder cannot be banned and is reported clean.
 - Admin/Developer/Tester targets are reported as staff with no active ban.
 - If an active ban exists, the profile shows the ban ID inline and the Bans drill-down lists the full record with a `View Proof` button when proof exists.

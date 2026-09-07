@@ -20,6 +20,7 @@ from tcbot.modules.helper.extraction import (
     launch_identity_refresh,
 )
 from tcbot.modules.helper.formatter import bold, code, esc, italic, mention
+from tcbot.modules.helper.identity import Identity, classify, profile_note
 from tcbot.utils.pagination import date_or_unknown, nav_row, paginate
 from tcbot.utils.time_and_date import fmt_dt
 
@@ -89,14 +90,25 @@ class Check:
         cls,
         bot: Bot,
         target_id: int,
+        *,
+        executor_id: int | None = None,
     ) -> tuple[str, InlineKeyboardMarkup]:
-        """Build the top-level profile view: identity + counts + drill-down keyboard."""
-        # * All 11 reads are independent; fire them in parallel for a single round-trip.
+        """Build the top-level profile view: identity + counts + drill-down keyboard.
+
+        When ``executor_id`` is given, the target is also classified relative
+        to the viewer so special identities get a recognition note (this bot,
+        self, Telegram, anonymous admin); staff and Founder are already
+        identified by the Role line.
+        """
+        # * All reads are independent; fire them in parallel for a single round-trip.
         # * return_exceptions=True prevents a single DB failure from crashing the whole view.
         # * fed_warn_total gives the federation-wide aggregate that user_total_warns hides
         # * (user_total_warns counts all historical warn docs; fed_warn_total sums active
         # * counters from warn_counts across all chats and is the staff-relevant number).
-        _results = await asyncio.gather(
+        # * The classify read is joined only when the viewer is known; /check is
+        # * read-only and public, so a failed lookup degrades to no note (the
+        # * fail-open "user" kind) instead of failing the whole card.
+        _reads: list[Any] = [
             _resolve_user_info(bot, target_id),
             db.users_roles.role_meta(target_id),
             db.bans_db.get_active_ban(target_id),
@@ -108,8 +120,10 @@ class Check:
             db.warns_db.federation_warn_count(target_id),
             db.kicks_db.user_kick_count(target_id),
             db.mutes_db.user_mute_count(target_id),
-            return_exceptions=True,
-        )
+        ]
+        if executor_id is not None:
+            _reads.append(classify(bot, executor_id, target_id))
+        _results = await asyncio.gather(*_reads, return_exceptions=True)
         r_user_info = _results[0]
         r_role_meta = _results[1]
         ban_failed = isinstance(_results[2], BaseException)
@@ -143,6 +157,19 @@ class Check:
                 "tuple[str | None, int | None, Any]", r_role_meta
             )
 
+        # * Recognition note for special identities, owned by
+        # * identity.profile_note (single source for "who is this?" copy).
+        # * Staff and Founder need none: the Role line below already labels
+        # * them. Cancellation propagates; any other lookup failure degrades
+        # * to no note.
+        identity_note: str | None = None
+        if len(_results) > 11:
+            r_ident = _results[11]
+            if isinstance(r_ident, asyncio.CancelledError):
+                raise r_ident
+            if not isinstance(r_ident, BaseException):
+                identity_note = profile_note(cast("Identity", r_ident))
+
         role_label = (
             db.users_roles.ROLE_LABEL.get(role or "", "Regular user")
             if role
@@ -175,7 +202,7 @@ class Check:
         role_block = "\n".join(role_lines)
 
         text = (
-            f"{bold('Profile')}\n\n"
+            (f"{identity_note}\n\n" if identity_note else "") + f"{bold('Profile')}\n\n"
             f"Name: {mention(target_id, fname)}\n"
             f"ID: {code(str(target_id))}\n"
             f"Username: {uname_part}\n"

@@ -40,9 +40,10 @@ The target is resolved by `extraction.extract_target`: reply, user ID, or resolv
 
 ## Top-level profile view
 
-`Check.profile(bot, target_id)` returns `(html_text, keyboard)` shaped like:
+`Check.profile(bot, target_id, *, executor_id=None)` returns `(html_text, keyboard)` shaped like:
 
 ```text
+That's me - ... / That's you - ...   <- recognition note, special identities only
 Profile
 
 Name: <mention>
@@ -72,6 +73,23 @@ Inline keyboard:
 ```
 
 Founder targets show only `Role: Founder` (no `Assigned by` / `Assigned at`; `tc_owners` does not record metadata).
+
+## Identity recognition
+
+When the caller passes `executor_id` (both `cmd_check` and the `check_main` back-button handler do, using the command author / tapper), the profile classifies the target relative to the viewer via `identity.classify` in the same parallel batch and prepends a recognition note for special identities. Note copy is owned by `identity.profile_note` (single source; moderation entries keep using `refuse_message` / `staff_notice`):
+
+| Target | Note |
+|---|---|
+| This bot (`target_id == bot.id`) | `That's me - this bot. I run moderation here, not collect bans.` |
+| Self (`target_id == executor_id`) | `That's you - checking your own record, good habit.` |
+| Telegram service account | `That's Telegram itself - outside federation jurisdiction.` |
+| Anonymous-admin placeholder | `That's the anonymous-admin placeholder, not an individual user.` |
+| Founder / Admin / Developer / Tester | No note; the `Role:` line already labels them. |
+| Anyone else | No note. |
+
+`/checkme` from a bot or anonymous-admin sender is refused outright (`Bots and anonymous senders don't hold federation records, so there is nothing to check.`) instead of reporting a misleading clean verdict for a placeholder ID.
+
+Previously the bot itself rendered as `Role: Regular user` with bare counts because the profile never classified the target. Counts, drill-downs, and the keyboard are identical with or without a note; a failed identity lookup degrades to no note instead of failing the card (the command is read-only, so there is nothing to fail closed).
 
 ## Drill-down views
 
@@ -151,7 +169,7 @@ All callbacks are registered in `checking.py` and run safely on repeated taps th
 
 ## Async behavior and parallel reads
 
-The profile view performs eleven independent reads in a single `asyncio.gather`:
+The profile view performs eleven independent reads plus an optional twelfth identity classification in a single `asyncio.gather`:
 
 ```python
 (
@@ -178,6 +196,8 @@ The profile view performs eleven independent reads in a single `asyncio.gather`:
     db.warns_db.federation_warn_count(target_id),
     db.kicks_db.user_kick_count(target_id),
     db.mutes_db.user_mute_count(target_id),
+    # only when executor_id is known:
+    # identity.classify(bot, executor_id, target_id),
     return_exceptions=True,
 )
 ```

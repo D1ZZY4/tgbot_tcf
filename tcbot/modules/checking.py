@@ -40,6 +40,10 @@ _RL_CHECK_CB_LIMIT: int = 20
 
 _ERR_BAN_INACTIVE = "This ban is no longer active."
 _ERR_BAN_NOT_FOUND = "Ban record not found."
+_ERR_BOT_SENDER = (
+    "Bots and anonymous senders don't hold federation records, "
+    "so there is nothing to check."
+)
 _ERR_STATUS_RETRY = (
     "I couldn't verify your ban status right now. Please try again in a moment."
 )
@@ -160,6 +164,15 @@ async def cmd_checkme(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     msg = update.effective_message
     if user is None or msg is None:
+        return
+    # * Bots and the anonymous-admin placeholder hold no federation records;
+    # * without this guard an anonymous-admin /checkme would get a misleading
+    # * "You're clean" verdict for an ID that can never be banned or staffed.
+    if user.is_bot:
+        try:
+            await msg.reply_text(_ERR_BOT_SENDER)
+        except Exception as exc:
+            log.debug("checkme bot-sender reply failed: %s", exc)
         return
     fname = user.first_name or str(user.id)
 
@@ -362,6 +375,7 @@ async def cmd_check(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     msg = update.effective_message
     if msg is None:
         return
+    user = update.effective_user
     args = parse_cmd_args(msg.text)
     target_id, target_fname = await extraction.extract_target(update, args, ctx.bot)
     if not target_id:
@@ -387,7 +401,9 @@ async def cmd_check(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
         except Exception as exc:
             log.debug("users_cache upsert failed for %d: %s", target_id, exc)
 
-    text, kb = await Check.profile(ctx.bot, target_id)
+    text, kb = await Check.profile(
+        ctx.bot, target_id, executor_id=user.id if user is not None else None
+    )
     try:
         await msg.reply_text(text, parse_mode="HTML", reply_markup=kb)
     except Exception as exc:
@@ -412,8 +428,15 @@ async def on_check_main(update: Update, ctx: ContextTypes.DEFAULT_TYPE) -> None:
     except IndexError:
         await q.answer()
         return
+    tapper = update.effective_user
     _, result = await asyncio.gather(
-        q.answer(), Check.profile(ctx.bot, target_id), return_exceptions=True
+        q.answer(),
+        Check.profile(
+            ctx.bot,
+            target_id,
+            executor_id=tapper.id if tapper is not None else None,
+        ),
+        return_exceptions=True,
     )
     if isinstance(result, BaseException):
         log.debug("on_check_main failed: %s", result)
